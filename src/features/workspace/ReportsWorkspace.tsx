@@ -13,11 +13,10 @@ import { apiRequest } from "@/lib/api-client";
 import { formatDate, humanize } from "@/lib/format";
 import { useAttendanceRefresh } from "@/lib/attendance-events";
 import { useSmartRefresh } from "@/lib/smart-refresh";
+import { buildAttendanceReportDocument, type AttendanceReportPayload } from "@/features/workspace/attendance-report-document";
 
 interface ReportTarget { employeeId: string; employeeCode: string; firstName: string; lastName: string; departmentName: string | null; workforceRole: string; employmentStatus: string }
-interface ReportEntry { workDate: string; scheduleName: string | null; status: string; firstClockIn: string | null; lastClockOut: string | null; workedMinutes: number; regularWorkedMinutes: number; payableOvertimeMinutes: number; excessUnapprovedOvertimeMinutes: number }
-interface ReportMonth { month: string; days: number; scheduledDays: number; daysWithAttendance: number; workedDays: number; workedMinutes: number; regularWorkedMinutes: number; potentialOvertimeMinutes: number; approvedOvertimeMinutes: number; payableOvertimeMinutes: number; excessUnapprovedOvertimeMinutes: number; workedHours: number; regularHours: number; approvedOvertimeHours: number }
-interface ReportPayload { status?: string; message?: string; organization?: { name: string; timeZone: string }; generatedAt?: string; employee?: ReportTarget; fromDate?: string; toDate?: string; attendanceRecordCount?: number; entries?: ReportEntry[]; months?: ReportMonth[] }
+type ReportPayload = AttendanceReportPayload;
 
 export function ReportsWorkspace() {
   const { user, workDate, timeZone } = useWorkspace();
@@ -34,6 +33,7 @@ export function ReportsWorkspace() {
   const [monthlyDownloading, setMonthlyDownloading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [autoPreviewRevision, setAutoPreviewRevision] = useState(0);
 
   const loadTargets = useCallback(async (silent = false) => {
     if (user.role === "EMPLOYEE") return;
@@ -50,7 +50,7 @@ export function ReportsWorkspace() {
   useEffect(() => { void loadTargets(); }, [loadTargets]);
   useEffect(() => { if (workDate) { setToDate(workDate); setFromDate((current) => current === monthStart(todayISO()) ? monthStart(workDate) : current); setToMonth((current) => current === todayISO().slice(0, 7) ? workDate.slice(0, 7) : current); setFromMonth((current) => current === todayISO().slice(0, 7) ? workDate.slice(0, 7) : current); } }, [workDate]);
 
-  function applyDatePreset(preset: "7d" | "4d" | "3m" | "6m" | "12m") {
+  function applyDatePreset(preset: "7d" | "14d" | "3m" | "6m" | "12m") {
     const end = workDate || todayISO();
     const start = preset.endsWith("d")
       ? shiftDate(end, -(Number(preset.slice(0, -1)) - 1))
@@ -60,6 +60,7 @@ export function ReportsWorkspace() {
     setReport(null);
     setError("");
     setNotice("");
+    setAutoPreviewRevision((revision) => revision + 1);
   }
 
   const selectedTarget = useMemo(() => targets.find((target) => target.employeeId === targetId), [targets, targetId]);
@@ -96,24 +97,37 @@ export function ReportsWorkspace() {
   const totalWorkedHours = useMemo(() => (report?.months || []).reduce((sum, month) => sum + month.workedMinutes, 0) / 60, [report]);
   const totalPayableOvertime = useMemo(() => (report?.months || []).reduce((sum, month) => sum + month.payableOvertimeMinutes, 0) / 60, [report]);
 
-  function buildQuery(asJson: boolean) {
-    const params = new URLSearchParams({ employeeId: user.role === "EMPLOYEE" ? user.employeeId || "" : targetId, fromDate, toDate });
-    if (asJson) params.set("format", "json");
-    return `/attendance/reports/monthly?${params.toString()}`;
-  }
-
-  async function generate(silent = false) {
+  const generate = useCallback(async (silent = false) => {
     if (!silent) { setGenerating(true); setError(""); setNotice(""); setReport(null); }
     try {
       if (!targetId && user.role !== "EMPLOYEE") throw new Error("Select a workforce member first.");
       if (!isDate(fromDate) || !isDate(toDate) || fromDate > toDate) throw new Error("Choose a valid date range.");
       const months = monthOrdinal(toDate) - monthOrdinal(fromDate) + 1;
       if (months > 24) throw new Error("Attendance reports can cover up to 24 calendar months at a time.");
-      const result = await apiRequest<ReportPayload>(buildQuery(true));
+      const params = new URLSearchParams({
+        employeeId: user.role === "EMPLOYEE" ? user.employeeId || "" : targetId,
+        fromDate,
+        toDate,
+        format: "json",
+      });
+      const result = await apiRequest<ReportPayload>(`/attendance/reports/monthly?${params.toString()}`);
+      if (result.status !== "ok" || !result.employee || !Array.isArray(result.entries) || !Array.isArray(result.months)) {
+        throw new Error("The attendance report response was incomplete.");
+      }
       setReport(result);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to generate this attendance report."); }
-    finally { if (!silent) setGenerating(false); }
-  }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to generate this attendance report.");
+    } finally {
+      if (!silent) setGenerating(false);
+    }
+  }, [fromDate, toDate, targetId, user.role, user.employeeId]);
+
+  useEffect(() => {
+    if (!autoPreviewRevision || !isDate(fromDate) || !isDate(toDate) || fromDate > toDate) return;
+    if (user.role !== "EMPLOYEE" && (!targetId || loadingTargets)) return;
+    const timer = window.setTimeout(() => { void generate(); }, 180);
+    return () => window.clearTimeout(timer);
+  }, [autoPreviewRevision, fromDate, toDate, targetId, loadingTargets, user.role, generate]);
 
   useSmartRefresh(() => { if (report) return generate(true); if (user.role !== "EMPLOYEE") return loadTargets(true); }, !generating && !downloading && !monthlyDownloading);
   useAttendanceRefresh(() => { if (report) void generate(true); });
@@ -160,13 +174,13 @@ export function ReportsWorkspace() {
     <Panel className="panel-pad">
       <div className="report-filter-grid">
         {user.role !== "EMPLOYEE" ? <Field label="Workforce member"><SelectInput required value={targetId} onChange={(event) => { setTargetId(event.target.value); setReport(null); }}><option value="">Select a person</option>{targets.map((target) => <option key={target.employeeId} value={target.employeeId}>{target.firstName} {target.lastName} · {target.employeeCode} · {target.departmentName || "No department"}</option>)}</SelectInput></Field> : <Field label="Report subject"><TextInput disabled value="My attendance" /></Field>}
-        <Field label="From date"><TextInput type="date" value={fromDate} max={toDate} onChange={(event) => { setFromDate(event.target.value); setReport(null); }} /></Field>
-        <Field label="To date"><TextInput type="date" value={toDate} min={fromDate} onChange={(event) => { setToDate(event.target.value); setReport(null); }} /></Field>
+        <Field label="From date"><TextInput type="date" value={fromDate} max={toDate} onChange={(event) => { setFromDate(event.target.value); setReport(null); setError(""); setAutoPreviewRevision((revision) => revision + 1); }} /></Field>
+        <Field label="To date"><TextInput type="date" value={toDate} min={fromDate} onChange={(event) => { setToDate(event.target.value); setReport(null); setError(""); setAutoPreviewRevision((revision) => revision + 1); }} /></Field>
       </div>
       <div className="report-date-presets" role="group" aria-label="Attendance report date range presets" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 7, marginTop: 12 }}>
         <span className="field-hint" style={{ marginRight: 3 }}>Quick range:</span>
         <button type="button" className="button button-sm button-secondary" onClick={() => applyDatePreset("7d")}>Last 7 days</button>
-        <button type="button" className="button button-sm button-secondary" onClick={() => applyDatePreset("4d")}>Last 4 days</button>
+        <button type="button" className="button button-sm button-secondary" onClick={() => applyDatePreset("14d")}>Last 14 days</button>
         <button type="button" className="button button-sm button-secondary" onClick={() => applyDatePreset("3m")}>Last 3 months</button>
         <button type="button" className="button button-sm button-secondary" onClick={() => applyDatePreset("6m")}>Last 6 months</button>
         <button type="button" className="button button-sm button-secondary" onClick={() => applyDatePreset("12m")}>Last 12 months</button>
