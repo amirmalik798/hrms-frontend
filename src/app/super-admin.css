@@ -3593,3 +3593,16 @@ html[data-super-admin-theme="light"] .super-admin-theme-root .sa-invitation-page
   -webkit-text-fill-color: #e5edf7 !important;
 
 }
+
+
+/* Preserve the original platform font stack without changing tenant workspaces. */
+html[data-super-admin-theme] {
+  --font-geist-sans: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-geist-mono: "Cascadia Code", Consolas, "Courier New", monospace;
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html[data-super-admin-theme] body {
+  font-family: var(--font-geist-sans);
+}
