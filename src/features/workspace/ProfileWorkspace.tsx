@@ -34,12 +34,14 @@ export function ProfileWorkspace() {
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoVersion, setPhotoVersion] = useState(0);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const loadSequenceRef = useRef(0);
   const [form, setForm] = useState<ProfileForm>({ phone: "", country: "", city: "", emergencyName: "", emergencyRelationship: "", emergencyPhone: "" });
   const isAdmin = user.role === "ORGANIZATION_ADMIN";
   const canEdit = isAdmin || user.role === "DEPARTMENT_MANAGER" || user.permissions.includes("employee.self.update") || (user.role === "HR_MANAGER" && user.permissions.includes("employee.update"));
   const canEditEmergency = isAdmin || user.role === "DEPARTMENT_MANAGER" || user.permissions.includes("employee.self.update") || (user.role === "HR_MANAGER" && user.permissions.includes("employee.update"));
 
   const load = useCallback(async (silent = false) => {
+    const requestId = ++loadSequenceRef.current;
     if (!silent) setLoading(true); setError("");
     try {
       let record: ProfileRecord;
@@ -53,6 +55,7 @@ export function ProfileWorkspace() {
         const result = await apiRequest<{ employee?: ProfileRecord }>(`/employees/${user.employeeId}`);
         record = result.employee || {};
       }
+      if (requestId !== loadSequenceRef.current) return;
       setProfile(record);
       setForm({
         phone: isAdmin ? record.contactPhone || "" : record.phone || "",
@@ -62,8 +65,8 @@ export function ProfileWorkspace() {
         emergencyRelationship: record.emergency_contact_relationship || "",
         emergencyPhone: record.emergency_contact_phone || "",
       });
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load your profile."); }
-    finally { if (!silent) setLoading(false); }
+    } catch (caught) { if (requestId === loadSequenceRef.current) setError(caught instanceof Error ? caught.message : "Unable to load your profile."); }
+    finally { if (!silent && requestId === loadSequenceRef.current) setLoading(false); }
   }, [isAdmin, user.role, user.employeeId]);
 
   useEffect(() => { void load(); }, [load]);

@@ -41,29 +41,51 @@ export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [partialWarning, setPartialWarning] = useState("");
   const pendingLeaveCountRef = useRef<number | null>(null);
+  const loadSequenceRef = useRef(0);
 
   const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true); setError("");
+    const requestId = ++loadSequenceRef.current;
+    if (!silent) setLoading(true); setError(""); setPartialWarning("");
     try {
       let result: DashboardData;
       if (role === "ORGANIZATION_ADMIN") {
-        const [overview, activity] = await Promise.all([
+        const [overview, activityResult] = await Promise.all([
           apiRequest<DashboardData>("/org/dashboard/stats"),
-          apiRequest<unknown>("/org/dashboard/activity?limit=8").catch(() => null),
+          apiRequest<unknown>("/org/dashboard/activity?limit=8")
+            .then((payload) => ({ payload, error: "" }))
+            .catch((caught) => ({
+              payload: null,
+              error: caught instanceof Error ? caught.message : "The recent activity feed is temporarily unavailable.",
+            })),
         ]);
-        result = { ...overview, recentActivity: pickArray(activity, "activities") };
+        if (requestId !== loadSequenceRef.current) return;
+        if (activityResult.error) {
+          setPartialWarning(`Organization overview loaded, but recent activity could not be retrieved: ${activityResult.error}`);
+          setData((current) => ({ ...overview, recentActivity: current?.recentActivity ?? [] }));
+          return;
+        }
+        result = { ...overview, recentActivity: pickArray(activityResult.payload, "activities") };
       } else if (role === "HR_MANAGER") {
         result = await apiRequest<DashboardData>("/hr-manager/overview");
       } else if (role === "DEPARTMENT_MANAGER") {
-        const [overview, leavePayload] = await Promise.all([
+        const [overview, leaveResult] = await Promise.all([
           apiRequest<DashboardData>("/department-manager/overview"),
-          apiRequest<{ requests?: Array<{ employeeId?: string; status?: string }> }>("/leave/requests").catch(() => null),
+          apiRequest<{ requests?: Array<{ employeeId?: string; status?: string }> }>("/leave/requests")
+            .then((payload) => ({ payload, error: "" }))
+            .catch((caught) => ({
+              payload: null,
+              error: caught instanceof Error ? caught.message : "The leave review count is temporarily unavailable.",
+            })),
         ]);
-        if (Array.isArray(leavePayload?.requests)) {
-          pendingLeaveCountRef.current = leavePayload.requests.filter((request) =>
+        if (requestId !== loadSequenceRef.current) return;
+        if (Array.isArray(leaveResult.payload?.requests)) {
+          pendingLeaveCountRef.current = leaveResult.payload.requests.filter((request) =>
             request.status === "PENDING" && request.employeeId !== user.employeeId,
           ).length;
+        } else if (leaveResult.error) {
+          setPartialWarning(`Team overview loaded, but the latest leave review count could not be retrieved: ${leaveResult.error}`);
         }
         result = {
           ...overview,
@@ -73,10 +95,12 @@ export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
         const resultEvents = await apiRequest<DashboardData>("/attendance/events");
         result = resultEvents;
       }
-      setData(result);
+      if (requestId === loadSequenceRef.current) setData(result);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to load your overview.");
-    } finally { if (!silent) setLoading(false); }
+      if (requestId === loadSequenceRef.current) setError(caught instanceof Error ? caught.message : "Unable to load your overview.");
+    } finally {
+      if (!silent && requestId === loadSequenceRef.current) setLoading(false);
+    }
   }, [role, user.employeeId]);
 
   useEffect(() => { void load(); }, [load]);
@@ -123,7 +147,8 @@ export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
       <span className="date-chip"><CalendarClock size={14} /> {formatDate(data?.workDate ?? workDate ?? new Date().toISOString(), timeZone)}</span>
     </div>
 
-    {error ? <div className="error-state panel" style={{ marginBottom: 18 }}><div className="state-icon"><AlertCircle size={19} /></div><h3>We could not load this overview</h3><p>{error} The workspace will retry automatically.</p></div> : null}
+    {error ? <div className="error-state panel" role="alert" style={{ marginBottom: 18 }}><div className="state-icon"><AlertCircle size={19} /></div><h3>We could not load this overview</h3><p>{error} The workspace will retry automatically.</p></div> : null}
+    {partialWarning ? <div className="info-callout" role="status" style={{ marginBottom: 18 }}><AlertCircle size={15} />{partialWarning}</div> : null}
 
     <div className="page-grid grid-4" style={{ marginBottom: 18 }}>
       {metrics.map((metric) => { const Icon = metric.icon; return <Panel key={metric.label} className="metric-card"><div className="metric-label"><span>{metric.label}</span><span className="metric-icon"><Icon size={16} /></span></div><div className="metric-value">{loading ? <span className="skeleton" style={{ display: "inline-block", width: 76, height: 30 }} /> : typeof metric.value === "number" ? formatNumber(metric.value) : metric.value ?? "—"}</div><div className="metric-foot">{metric.note}</div></Panel>; })}
