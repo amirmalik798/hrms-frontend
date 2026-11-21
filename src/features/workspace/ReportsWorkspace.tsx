@@ -279,4 +279,4 @@ function shiftMonthsClamped(value: string, months: number) {
 function isDate(value: string) { return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`)); }
 function monthOrdinal(value: string) { const [year, month] = value.split("-").map(Number); return year * 12 + month; }
 function isMonth(value: string) { return /^\d{4}-(0[1-9]|1[0-2])$/.test(value); }
-function formatTime(value: string | null, timeZone: string) { if (!value) return "—"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", hour12: true, timeZone }).format(date); }
+function formatTime(value: string | Date | null, timeZone: string) { if (!value) return "—"; const date = value instanceof Date ? value : new Date(value); if (Number.isNaN(date.getTime())) return "—"; return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", hour12: true, timeZone }).format(date); }
