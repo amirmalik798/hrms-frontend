@@ -7,6 +7,7 @@ import { apiRequest, ApiError } from "@/lib/api-client";
 import type { WorkspaceRole, WorkspaceSessionPayload, WorkspaceUser } from "@/types/workspace";
 import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
 import { roleLabels } from "@/lib/workspace-config";
+import { getISODateInTimeZone } from "@/lib/format";
 import { useSmartRefresh } from "@/lib/smart-refresh";
 
 interface WorkspaceContextValue {
@@ -62,6 +63,7 @@ export function WorkspaceGate({ role, children }: { role: WorkspaceRole; childre
     setError("");
     setLicenseCheckError("");
     setTimeZoneStatus("loading");
+    let organizationTimeZone: string | null = null;
     try {
       const endpoint = role === "ORGANIZATION_ADMIN" ? "/org/auth/me" : "/employee-auth/me";
       const result = await apiRequest<WorkspaceSessionPayload>(endpoint);
@@ -119,6 +121,7 @@ export function WorkspaceGate({ role, children }: { role: WorkspaceRole; childre
         if (typeof context.timeZone === "string" && context.timeZone.trim()) {
           // Validate with Intl before treating a server-supplied timezone as authoritative.
           new Intl.DateTimeFormat("en", { timeZone: context.timeZone }).format(new Date());
+          organizationTimeZone = context.timeZone;
           setTimeZone(context.timeZone);
           setTimeZoneStatus("ready");
         } else {
@@ -131,8 +134,9 @@ export function WorkspaceGate({ role, children }: { role: WorkspaceRole; childre
       }
 
       try {
-        const deviceDate = new Date().toISOString().slice(0, 10);
-        const workContext = await apiRequest<{ today?: string }>(`/attendance/calendar?fromDate=${deviceDate}&toDate=${deviceDate}`);
+        if (!organizationTimeZone) throw new Error("The organization timezone could not be verified.");
+        const organizationDate = getISODateInTimeZone(organizationTimeZone);
+        const workContext = await apiRequest<{ today?: string }>(`/attendance/calendar?fromDate=${organizationDate}&toDate=${organizationDate}`);
         if (typeof workContext.today === "string" && /^\d{4}-\d{2}-\d{2}$/.test(workContext.today)) setWorkDate(workContext.today);
       } catch {
         // Pages that need a verified work date show their own recoverable warning.

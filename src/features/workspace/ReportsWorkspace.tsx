@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownToLine, CalendarRange, FileBarChart } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
@@ -10,7 +10,7 @@ import { Panel } from "@/components/ui/Panel";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest } from "@/lib/api-client";
-import { formatDate, humanize } from "@/lib/format";
+import { formatDate, getISODateInTimeZone, humanize } from "@/lib/format";
 import { useAttendanceRefresh } from "@/lib/attendance-events";
 import { useSmartRefresh } from "@/lib/smart-refresh";
 import { buildAttendanceReportDocument, type AttendanceReportPayload } from "@/features/workspace/attendance-report-document";
@@ -22,19 +22,20 @@ export function ReportsWorkspace() {
   const { user, workDate, timeZone } = useWorkspace();
   const [targets, setTargets] = useState<ReportTarget[]>([]);
   const [targetId, setTargetId] = useState(user.role === "EMPLOYEE" ? user.employeeId || "" : "");
-  const [fromDate, setFromDate] = useState(monthStart(workDate || todayISO()));
-  const [toDate, setToDate] = useState(workDate || todayISO());
+  const [fromDate, setFromDate] = useState(monthStart(workDate || todayISO(timeZone)));
+  const [toDate, setToDate] = useState(workDate || todayISO(timeZone));
   const [report, setReport] = useState<ReportPayload | null>(null);
   const [loadingTargets, setLoadingTargets] = useState(user.role !== "EMPLOYEE");
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [fromMonth, setFromMonth] = useState(monthStart(workDate || todayISO()).slice(0, 7));
-  const [toMonth, setToMonth] = useState((workDate || todayISO()).slice(0, 7));
+  const [fromMonth, setFromMonth] = useState(monthStart(workDate || todayISO(timeZone)).slice(0, 7));
+  const [toMonth, setToMonth] = useState((workDate || todayISO(timeZone)).slice(0, 7));
   const [monthlyDownloading, setMonthlyDownloading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [autoPreviewRevision, setAutoPreviewRevision] = useState(0);
   const [selectedDatePreset, setSelectedDatePreset] = useState<"7d" | "14d" | "3m" | "6m" | "12m" | null>(null);
+  const reportRequestRef = useRef(0);
 
   const loadTargets = useCallback(async (silent = false) => {
     if (user.role === "EMPLOYEE") return;
@@ -49,11 +50,11 @@ export function ReportsWorkspace() {
   }, [user.role]);
 
   useEffect(() => { void loadTargets(); }, [loadTargets]);
-  useEffect(() => { if (workDate) { setToDate(workDate); setFromDate((current) => current === monthStart(todayISO()) ? monthStart(workDate) : current); setToMonth((current) => current === todayISO().slice(0, 7) ? workDate.slice(0, 7) : current); setFromMonth((current) => current === todayISO().slice(0, 7) ? workDate.slice(0, 7) : current); } }, [workDate]);
+  useEffect(() => { if (workDate) { setToDate(workDate); setFromDate((current) => current === monthStart(todayISO(timeZone)) ? monthStart(workDate) : current); setToMonth((current) => current === todayISO(timeZone).slice(0, 7) ? workDate.slice(0, 7) : current); setFromMonth((current) => current === todayISO(timeZone).slice(0, 7) ? workDate.slice(0, 7) : current); } }, [workDate, timeZone]);
 
   function applyDatePreset(preset: "7d" | "14d" | "3m" | "6m" | "12m") {
     setSelectedDatePreset(preset);
-    const end = workDate || todayISO();
+    const end = workDate || todayISO(timeZone);
     const start = preset.endsWith("d")
       ? shiftDate(end, -(Number(preset.slice(0, -1)) - 1))
       : shiftMonthsClamped(end, -Number(preset.slice(0, -1)));
@@ -100,6 +101,7 @@ export function ReportsWorkspace() {
   const totalPayableOvertime = useMemo(() => (report?.months || []).reduce((sum, month) => sum + month.payableOvertimeMinutes, 0) / 60, [report]);
 
   const generate = useCallback(async (silent = false) => {
+    const requestId = ++reportRequestRef.current;
     if (!silent) { setGenerating(true); setError(""); setNotice(""); setReport(null); }
     try {
       if (!targetId && user.role !== "EMPLOYEE") throw new Error("Select a workforce member first.");
@@ -116,13 +118,19 @@ export function ReportsWorkspace() {
       if (result.status !== "ok" || !result.employee || !Array.isArray(result.entries) || !Array.isArray(result.months)) {
         throw new Error("The attendance report response was incomplete.");
       }
-      setReport(result);
+      if (requestId === reportRequestRef.current) setReport(result);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to generate this attendance report.");
+      if (requestId === reportRequestRef.current) setError(caught instanceof Error ? caught.message : "Unable to generate this attendance report.");
     } finally {
-      if (!silent) setGenerating(false);
+      if (!silent && requestId === reportRequestRef.current) setGenerating(false);
     }
   }, [fromDate, toDate, targetId, user.role, user.employeeId]);
+
+  useEffect(() => {
+    reportRequestRef.current += 1;
+    setReport(null);
+    setGenerating(false);
+  }, [targetId, fromDate, toDate]);
 
   useEffect(() => {
     if (!autoPreviewRevision || !isDate(fromDate) || !isDate(toDate) || fromDate > toDate) return;
@@ -191,7 +199,7 @@ export function ReportsWorkspace() {
       <div className="organization-monthly-heading"><span className="metric-icon"><CalendarRange size={17} /></span><div><h2>{user.role === "ORGANIZATION_ADMIN" ? "Multi-month organization attendance" : "Multi-month direct-reports attendance"}</h2><p>{user.role === "ORGANIZATION_ADMIN" ? "Download one PDF containing the organization-wide monthly attendance registers." : "Download one PDF containing monthly attendance registers for your authorized direct-report scope."} Up to 24 months per report.</p></div></div>
       <div className="report-filter-grid organization-monthly-fields">
         <Field label="From month"><TextInput type="month" min="1900-01" max={toMonth || undefined} value={fromMonth} onChange={(event) => setFromMonth(event.target.value)} /></Field>
-        <Field label="To month"><TextInput type="month" min={fromMonth || "1900-01"} max={(workDate || todayISO()).slice(0, 7)} value={toMonth} onChange={(event) => setToMonth(event.target.value)} /></Field>
+        <Field label="To month"><TextInput type="month" min={fromMonth || "1900-01"} max={(workDate || todayISO(timeZone)).slice(0, 7)} value={toMonth} onChange={(event) => setToMonth(event.target.value)} /></Field>
         <div className="organization-monthly-summary"><strong>{monthSpan || "—"}</strong><span>{monthSpan === 1 ? "calendar month" : "calendar months"} · maximum 24</span></div>
       </div>
       <div className="organization-monthly-footer"><p>Uses organization timezone: <strong>{timeZone}</strong>. Future dates are excluded by the backend.</p><Button variant="primary" leading={<ArrowDownToLine size={14} />} busy={monthlyDownloading} disabled={!monthSpan || monthSpan > 24} onClick={() => void downloadOrganizationSeries()}>Download combined PDF</Button></div>
@@ -224,7 +232,7 @@ export function ReportsWorkspace() {
     </> : <Panel className="panel-pad report-placeholder"><div className="state-icon"><FileBarChart size={18} /></div><h3>Choose your report details</h3><p>Preview will display month summaries and recent daily attendance. The PDF download contains the complete report generated by the backend.</p></Panel>}
   </>;
 }
-function todayISO() { return new Date().toISOString().slice(0, 10); }
+function todayISO(timeZone: string) { return getISODateInTimeZone(timeZone); }
 function monthStart(value: string) { return `${value.slice(0, 7)}-01`; }
 function shiftDate(value: string, days: number) {
   const [year, month, day] = value.split("-").map(Number);

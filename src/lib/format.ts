@@ -10,10 +10,14 @@ export function formatNumber(value: number | null | undefined): string {
 
 export function formatDate(value: unknown, timeZone?: string): string {
   if (typeof value !== "string" || !value) return "—";
-  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value);
+  const isCalendarDate = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const date = new Date(isCalendarDate ? `${value}T00:00:00.000Z` : value);
   if (Number.isNaN(date.getTime())) return String(value);
+  // Date-only values represent calendar days, not instants. Keep them fixed
+  // regardless of the viewer's timezone.
+  const displayTimeZone = isCalendarDate ? "UTC" : timeZone;
   try {
-    return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", ...(timeZone ? { timeZone } : {}) }).format(date);
+    return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", ...(displayTimeZone ? { timeZone: displayTimeZone } : {}) }).format(date);
   } catch {
     return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(date);
   }
@@ -28,6 +32,15 @@ export function formatMoney(value: unknown, currencyCode?: string | null): strin
   } catch {
     return `${currencyCode} ${new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(amount)}`;
   }
+}
+
+/** Return today's calendar date in the configured organization timezone. */
+export function getISODateInTimeZone(timeZone: string, referenceDate = new Date()): string {
+  if (!timeZone || !timeZone.trim()) throw new Error("An organization timezone is required to determine today's date.");
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(referenceDate);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  if (!values.year || !values.month || !values.day) throw new Error("Unable to determine today's date in the organization timezone.");
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 export function getLocalISODate() {
