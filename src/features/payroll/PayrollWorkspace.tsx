@@ -244,6 +244,7 @@ export function PayrollWorkspace() {
           departmentName: teamSlipTarget.departmentName || "No department",
         },
         currencyCode: organizationCurrencyCode,
+        timeZone,
         startMonth: teamSlipStartMonth,
         endMonth: teamSlipEndMonth,
         generatedAt: new Date().toISOString(),
