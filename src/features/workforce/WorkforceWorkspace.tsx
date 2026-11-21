@@ -1,0 +1,266 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { ArrowUpDown, BriefcaseBusiness, Eye, Filter, Mail, MoreHorizontal, Pencil, Plus, Search, ShieldCheck, UserRound, Users, X } from "lucide-react";
+import { useWorkspace } from "@/components/layout/WorkspaceGate";
+import { Button } from "@/components/ui/Button";
+import { Drawer } from "@/components/ui/Drawer";
+import { Field, SelectInput, TextArea, TextInput } from "@/components/ui/Field";
+import { Panel } from "@/components/ui/Panel";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { apiRequest, ApiError, pickArray, stringValue } from "@/lib/api-client";
+import { formatDate, humanize, initials } from "@/lib/format";
+
+interface Employee {
+  id: string;
+  employee_code: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  country: string;
+  city: string;
+  designation: string;
+  workforce_role: string;
+  employment_status: string;
+  department_id: string | null;
+  department_name: string | null;
+  manager_id: string | null;
+  manager_name: string | null;
+  joining_date: string;
+  invitation_status?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_relationship?: string | null;
+  emergency_contact_phone?: string | null;
+  managed_departments?: { id: string; name: string; status?: string }[];
+  [key: string]: unknown;
+}
+interface DepartmentOption { id: string; name: string; status?: string }
+interface DirectoryResponse { employees?: Employee[]; pagination?: { page?: number; total?: number; totalPages?: number }; message?: string }
+interface EmployeeForm {
+  employee_code: string; first_name: string; last_name: string; email: string; phone: string;
+  country: string; city: string; designation: string; joining_date: string; workforce_role: string;
+  manager_id: string; department_id: string; emergency_contact_name: string;
+  emergency_contact_relationship: string; emergency_contact_phone: string;
+}
+const blankForm = (): EmployeeForm => ({ employee_code: "", first_name: "", last_name: "", email: "", phone: "", country: "", city: "", designation: "", joining_date: "", workforce_role: "EMPLOYEE", manager_id: "", department_id: "", emergency_contact_name: "", emergency_contact_relationship: "", emergency_contact_phone: "" });
+const roleDisplay: Record<string, string> = { HR_MANAGER: "HR Manager", DEPARTMENT_MANAGER: "Department Manager", EMPLOYEE: "Employee" };
+
+export function WorkforceWorkspace() {
+  const { user } = useWorkspace();
+  const [rows, setRows] = useState<Employee[]>([]);
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]);
+  const [managerOptions, setManagerOptions] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [departmentFilter, setDepartmentFilter] = useState("ALL");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [drawerMode, setDrawerMode] = useState<"create" | "edit" | "details" | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Employee | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [statusTarget, setStatusTarget] = useState<Employee | null>(null);
+  const [statusSaving, setStatusSaving] = useState(false);
+  const canCreate = user.role === "ORGANIZATION_ADMIN" || (user.role === "HR_MANAGER" && user.permissions.includes("employee.create"));
+  const canEdit = user.role === "ORGANIZATION_ADMIN" || (user.role === "HR_MANAGER" && user.permissions.includes("employee.update"));
+  const canInvite = user.role === "ORGANIZATION_ADMIN" || (user.role === "HR_MANAGER" && user.permissions.includes("employee.create") && user.permissions.includes("user.invite"));
+  const canChangeStatus = user.role === "ORGANIZATION_ADMIN"
+    || (user.role === "HR_MANAGER" && user.permissions.includes("employee.update") && user.permissions.includes("employee.status.change"))
+    || user.role === "DEPARTMENT_MANAGER";
+
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: "50", sortBy: "name", sortOrder: "asc" });
+      if (search.trim()) params.set("q", search.trim());
+      if (statusFilter !== "ALL") params.set("status", statusFilter);
+      if (departmentFilter !== "ALL") departmentFilter === "UNASSIGNED" ? params.set("unassigned", "true") : params.set("departmentId", departmentFilter);
+      const result = await apiRequest<DirectoryResponse>(`/employees?${params.toString()}`);
+      setRows(Array.isArray(result.employees) ? result.employees : []);
+      setTotal(result.pagination?.total ?? 0);
+      setTotalPages(Math.max(1, result.pagination?.totalPages ?? 1));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to load workforce records.");
+    } finally { setLoading(false); }
+  }, [page, search, statusFilter, departmentFilter]);
+
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      apiRequest<{ departments?: DepartmentOption[] }>("/departments?page=1&limit=100&includeInactive=true").catch(() => null),
+      apiRequest<{ employees?: Employee[] }>("/employees?page=1&limit=100&status=ACTIVE&sortBy=name&sortOrder=asc").catch(() => null),
+    ]).then(([deptResult, peopleResult]) => {
+      if (!active) return;
+      setDepartments(deptResult?.departments ?? []);
+      setManagerOptions((peopleResult?.employees ?? []).filter((person) => ["HR_MANAGER", "DEPARTMENT_MANAGER"].includes(person.workforce_role)));
+    });
+    return () => { active = false; };
+  }, []);
+
+  async function openDetails(id: string, mode: "details" | "edit" = "details") {
+    setDrawerMode(mode); setSelectedId(id); setDetailLoading(true); setSelected(null); setError("");
+    try {
+      const result = await apiRequest<{ employee?: Employee }>(`/employees/${id}`);
+      setSelected(result.employee ?? null);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load this employee."); }
+    finally { setDetailLoading(false); }
+  }
+
+  async function confirmEmploymentStatusChange() {
+    if (!statusTarget || statusSaving) return;
+    const nextStatus = statusTarget.employment_status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+    setStatusSaving(true); setError(""); setNotice("");
+    try {
+      await apiRequest(`/employees/${encodeURIComponent(statusTarget.id)}`, {
+        method: "PATCH", body: JSON.stringify({ employment_status: nextStatus }),
+      });
+      setNotice(`${statusTarget.first_name} ${statusTarget.last_name} is now ${nextStatus.toLowerCase()}.`);
+      setStatusTarget(null);
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to update workforce status.");
+    } finally { setStatusSaving(false); }
+  }
+
+  const headerAction = canCreate ? <Button variant="primary" leading={<Plus size={15} />} onClick={() => { setSelected(null); setDrawerMode("create"); setSelectedId(null); }}>Add workforce member</Button> : undefined;
+  const title = user.role === "DEPARTMENT_MANAGER" ? "My team" : "Workforce";
+
+  return <>
+    <PageHeader eyebrow="People" title={title} description={user.role === "DEPARTMENT_MANAGER" ? "A focused directory of employees in your assigned departments." : "A single, searchable place to manage employee records and work relationships."} action={headerAction} />
+    {notice ? <div className="info-callout" style={{ marginBottom: 14 }}>{notice}</div> : null}
+    <Panel>
+      <div className="toolbar">
+        <div className="toolbar-left"><label className="search-field"><Search size={15} /><input aria-label="Search workforce" placeholder="Search name, code, email, role…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} /><kbd style={{ color: "var(--subtle)", fontSize: 9 }}>⌕</kbd></label>
+          <select className="filter-select" aria-label="Filter by employment status" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}><option value="ALL">All statuses</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option><option value="FORMER">Former</option></select>
+          {user.role !== "DEPARTMENT_MANAGER" ? <select className="filter-select" aria-label="Filter by department" value={departmentFilter} onChange={(event) => { setDepartmentFilter(event.target.value); setPage(1); }}><option value="ALL">All departments</option><option value="UNASSIGNED">Unassigned</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select> : null}
+        </div>
+        <div className="toolbar-right"><span style={{ color: "var(--muted)", fontSize: 11 }}>{loading ? "Loading…" : `${total} people`}</span><Button size="sm" variant="ghost" leading={<RefreshIcon />} onClick={() => void load()}>Refresh</Button></div>
+      </div>
+      {error && !rows.length ? <div className="error-state"><div className="state-icon"><X size={18} /></div><h3>Workforce could not be loaded</h3><p>{error}</p><Button variant="secondary" onClick={() => void load()}>Retry</Button></div> : null}
+      {loading && !rows.length ? <TableSkeleton /> : !rows.length && !error ? <div className="empty-state"><div className="state-icon"><Users size={19} /></div><h3>{search || statusFilter !== "ALL" || departmentFilter !== "ALL" ? "No matching people" : "No workforce records yet"}</h3><p>{search || statusFilter !== "ALL" || departmentFilter !== "ALL" ? "Try adjusting your search or filters." : "Workforce profiles will appear here after they have been created."}</p>{canCreate ? <Button size="sm" variant="primary" leading={<Plus size={14} />} onClick={() => setDrawerMode("create")}>Add workforce member</Button> : null}</div> : null}
+      {rows.length ? <><div className="table-wrap"><table className="data-table"><thead><tr><th>Person</th><th>Role & department</th><th>Manager</th><th>Employment</th><th>Invitation</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>
+        {rows.map((person) => <tr key={person.id} onDoubleClick={() => void openDetails(person.id)} style={{ cursor: "pointer" }}>
+          <td><button type="button" onClick={() => void openDetails(person.id)} style={{ display: "flex", alignItems: "center", gap: 10, border: 0, padding: 0, background: "transparent", textAlign: "left" }}><span className="user-avatar">{initials(`${person.first_name} ${person.last_name}`)}</span><span><span className="table-primary">{person.first_name} {person.last_name}</span><span className="table-secondary">{person.employee_code} · {person.email}</span></span></button></td>
+          <td><span className="table-primary">{roleDisplay[person.workforce_role] ?? humanize(person.workforce_role)}</span><span className="table-secondary">{person.department_name || "No department"}</span></td>
+          <td>{person.manager_name || <span style={{ color: "var(--subtle)" }}>Not assigned</span>}</td>
+          <td><StatusBadge value={person.employment_status} /></td>
+          <td>{person.invitation_status ? <StatusBadge value={person.invitation_status} /> : <span style={{ color: "var(--subtle)" }}>—</span>}</td>
+          <td><div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4, flexWrap: "wrap" }}><button type="button" className="icon-button" aria-label={`View ${person.first_name} ${person.last_name}`} onClick={() => void openDetails(person.id)}><Eye size={15} /></button>{canEdit ? <button type="button" className="icon-button" aria-label={`Edit ${person.first_name} ${person.last_name}`} onClick={() => void openDetails(person.id, "edit")}><Pencil size={15} /></button> : null}{canChangeStatus && person.employment_status !== "FORMER" && (user.role !== "DEPARTMENT_MANAGER" || person.workforce_role === "EMPLOYEE") && !(person.is_primary_hr_manager === true && person.employment_status === "ACTIVE") ? <Button size="sm" variant={person.employment_status === "ACTIVE" ? "danger" : "secondary"} onClick={() => setStatusTarget(person)}>{person.employment_status === "ACTIVE" ? "Deactivate" : "Activate"}</Button> : null}</div></td>
+        </tr>)}
+      </tbody></table></div><div className="table-footer"><span>Showing {Math.min((page - 1) * 50 + 1, total)}–{Math.min(page * 50, total)} of {total} people</span><div style={{ display: "flex", gap: 7 }}><Button size="sm" disabled={page <= 1 || loading} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</Button><Button size="sm" disabled={page >= totalPages || loading} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Next</Button></div></div></> : null}
+    </Panel>
+
+    <Drawer open={Boolean(statusTarget)} title={statusTarget?.employment_status === "ACTIVE" ? "Deactivate workforce member?" : "Activate workforce member?"} description={statusTarget?.employment_status === "ACTIVE" ? "The member’s employment will become inactive. The backend will synchronize the linked account and invalidate existing sessions as required." : "The backend will verify the linked account, password, organization status and role eligibility before reactivating employment."} onClose={() => { if (!statusSaving) setStatusTarget(null); }} width="standard" footer={<><Button variant="secondary" disabled={statusSaving} onClick={() => setStatusTarget(null)}>Cancel</Button><Button variant={statusTarget?.employment_status === "ACTIVE" ? "danger" : "primary"} busy={statusSaving} onClick={() => void confirmEmploymentStatusChange()}>{statusTarget?.employment_status === "ACTIVE" ? "Confirm deactivation" : "Confirm activation"}</Button></>}>
+      {statusTarget ? <div className="form-section"><div className="detail-list"><div><span>Workforce member</span><strong>{statusTarget.first_name} {statusTarget.last_name}</strong></div><div><span>Employee code</span><strong>{statusTarget.employee_code}</strong></div><div><span>Current employment status</span><strong>{humanize(statusTarget.employment_status)}</strong></div></div>{statusTarget.employment_status === "FORMER" ? <p className="form-note">Former employees cannot be reactivated through this action. Use the supported rehire workflow.</p> : null}</div> : null}
+    </Drawer>
+    <EmployeeDrawer open={drawerMode === "create" || drawerMode === "edit"} mode={drawerMode === "edit" ? "edit" : "create"} employee={selected} loading={detailLoading} departments={departments} managers={managerOptions} onClose={() => { setDrawerMode(null); setSelectedId(null); }} onSaved={() => { setDrawerMode(null); setSelectedId(null); setNotice("Workforce record saved."); void load(); setTimeout(() => setNotice(""), 4500); }} />
+    <EmployeeDetailsDrawer open={drawerMode === "details"} employee={selected} loading={detailLoading} error={error} canInvite={canInvite} onClose={() => { setDrawerMode(null); setSelectedId(null); setError(""); }} onInviteComplete={() => { setNotice("Invitation sent successfully."); void load(); setTimeout(() => setNotice(""), 4500); }} onEdit={canEdit ? () => { if (selectedId) void openDetails(selectedId, "edit"); } : undefined} />
+  </>;
+}
+
+function EmployeeDrawer({ open, mode, employee, loading, departments, managers, onClose, onSaved }: { open: boolean; mode: "create" | "edit"; employee: Employee | null; loading: boolean; departments: DepartmentOption[]; managers: Employee[]; onClose: () => void; onSaved: () => void }) {
+  const { user } = useWorkspace();
+  const [form, setForm] = useState<EmployeeForm>(blankForm);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [showEmergency, setShowEmergency] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setError(""); setShowEmergency(Boolean(employee?.emergency_contact_name || employee?.emergency_contact_phone));
+    if (employee) setForm({
+      employee_code: employee.employee_code ?? "", first_name: employee.first_name ?? "", last_name: employee.last_name ?? "", email: employee.email ?? "", phone: employee.phone ?? "", country: employee.country ?? "", city: employee.city ?? "", designation: employee.designation ?? "", joining_date: employee.joining_date?.slice(0, 10) ?? "", workforce_role: employee.workforce_role ?? "EMPLOYEE", manager_id: employee.manager_id ?? "", department_id: employee.department_id ?? "", emergency_contact_name: employee.emergency_contact_name ?? "", emergency_contact_relationship: employee.emergency_contact_relationship ?? "", emergency_contact_phone: employee.emergency_contact_phone ?? "",
+    }); else setForm(blankForm());
+  }, [open, employee]);
+  const update = (key: keyof EmployeeForm, value: string) => setForm((current) => ({ ...current, [key]: value }));
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSaving(true); setError("");
+    const body: Record<string, string | null> = {
+      employee_code: form.employee_code.trim().toUpperCase(), first_name: form.first_name.trim(), last_name: form.last_name.trim(), email: form.email.trim().toLowerCase(), phone: form.phone.trim(), country: form.country.trim(), city: form.city.trim(), designation: form.designation.trim(), joining_date: form.joining_date, workforce_role: form.workforce_role,
+      manager_id: form.manager_id || null, department_id: form.department_id || null,
+      emergency_contact_name: form.emergency_contact_name.trim() || null,
+      emergency_contact_relationship: form.emergency_contact_relationship.trim() || null,
+      emergency_contact_phone: form.emergency_contact_phone.trim() || null,
+    };
+    try {
+      if (mode === "create") {
+        if (user.role === "HR_MANAGER" && form.workforce_role === "HR_MANAGER") throw new Error("HR Managers cannot create another HR Manager profile.");
+        await apiRequest("/employees", { method: "POST", body: JSON.stringify(body) });
+      } else if (employee) {
+        const { workforce_role: _notPatchable, ...editableBody } = body;
+        void _notPatchable;
+        await apiRequest(`/employees/${employee.id}`, { method: "PATCH", body: JSON.stringify(editableBody) });
+      }
+      onSaved();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to save this workforce profile."); }
+    finally { setSaving(false); }
+  }
+
+  const allowRoleChoice = mode === "create";
+  return <Drawer open={open} title={mode === "create" ? "Create workforce member" : "Edit workforce member"} description={mode === "create" ? "Create an inactive workforce profile. Account activation happens through the existing invitation acceptance process." : "Update this person’s work and contact details. Server-side role and field permissions remain authoritative."} onClose={onClose} footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="primary" busy={saving || loading} onClick={() => document.querySelector<HTMLFormElement>("#employee-profile-form")?.requestSubmit()}>{mode === "create" ? "Create profile" : "Save changes"}</Button></>}>
+    {loading ? <div className="loading-state">Loading workforce profile…</div> : <form id="employee-profile-form" onSubmit={submit}>
+      {error ? <div className="form-error" role="alert">{error}</div> : null}
+      <section className="form-section"><h3 className="form-section-title"><UserRound size={15} /> Personal & employment</h3><div className="form-grid">
+        <Field label="Employee code"><TextInput required maxLength={50} value={form.employee_code} onChange={(e) => update("employee_code", e.target.value)} placeholder="e.g. EMP-001" /></Field>
+        <Field label="Workforce role"><SelectInput required disabled={!allowRoleChoice} value={form.workforce_role} onChange={(e) => update("workforce_role", e.target.value)}><option value="EMPLOYEE">Employee</option><option value="DEPARTMENT_MANAGER">Department Manager</option>{user.role === "ORGANIZATION_ADMIN" ? <option value="HR_MANAGER">HR Manager</option> : null}</SelectInput></Field>
+        <Field label="First name"><TextInput required minLength={2} maxLength={100} value={form.first_name} onChange={(e) => update("first_name", e.target.value)} /></Field>
+        <Field label="Last name"><TextInput required minLength={2} maxLength={100} value={form.last_name} onChange={(e) => update("last_name", e.target.value)} /></Field>
+        <Field label="Job title"><TextInput required maxLength={100} value={form.designation} onChange={(e) => update("designation", e.target.value)} placeholder="e.g. Finance Officer" /></Field>
+        <Field label="Joining date"><TextInput required type="date" value={form.joining_date} onChange={(e) => update("joining_date", e.target.value)} /></Field>
+        <Field label="Department"><SelectInput value={form.department_id} onChange={(e) => update("department_id", e.target.value)}><option value="">No department assigned</option>{departments.filter((d) => d.status !== "INACTIVE").map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</SelectInput></Field>
+        <Field label="Reporting manager"><SelectInput value={form.manager_id} onChange={(e) => update("manager_id", e.target.value)}><option value="">No manager assigned</option>{managers.filter((m) => m.id !== employee?.id).map((m) => <option key={m.id} value={m.id}>{m.first_name} {m.last_name} · {roleDisplay[m.workforce_role] ?? humanize(m.workforce_role)}</option>)}</SelectInput></Field>
+      </div></section>
+      <section className="form-section"><h3 className="form-section-title"><Mail size={15} /> Contact details</h3><div className="form-grid">
+        <Field label="Work email"><TextInput type="email" required maxLength={254} value={form.email} onChange={(e) => update("email", e.target.value)} placeholder="person@company.com" /></Field>
+        <Field label="Phone number"><TextInput required maxLength={40} value={form.phone} onChange={(e) => update("phone", e.target.value)} placeholder="Include country code" /></Field>
+        <Field label="Country"><TextInput required maxLength={100} value={form.country} onChange={(e) => update("country", e.target.value)} /></Field>
+        <Field label="City"><TextInput required maxLength={100} value={form.city} onChange={(e) => update("city", e.target.value)} /></Field>
+      </div></section>
+      <section className="form-section"><button type="button" className="form-section-title" onClick={() => setShowEmergency((value) => !value)} style={{ width: "100%", border: 0, background: "transparent", padding: 0, cursor: "pointer", textAlign: "left" }}><ShieldCheck size={15} /> Emergency contact <span style={{ marginLeft: "auto", color: "var(--accent)", fontSize: 10 }}>{showEmergency ? "Hide" : "Add details"}</span></button>
+        {showEmergency ? <div className="form-grid" style={{ marginTop: 13 }}><Field label="Contact name"><TextInput value={form.emergency_contact_name} onChange={(e) => update("emergency_contact_name", e.target.value)} /></Field><Field label="Relationship"><TextInput value={form.emergency_contact_relationship} onChange={(e) => update("emergency_contact_relationship", e.target.value)} /></Field><Field label="Contact phone"><TextInput value={form.emergency_contact_phone} onChange={(e) => update("emergency_contact_phone", e.target.value)} /></Field></div> : <p className="form-section-description">Optional information. Reveal only when you need to record it.</p>}
+      </section>
+      {mode === "create" ? <div className="form-note"><ShieldCheck size={15} /> New workforce profiles are created as inactive. The person becomes an active account only after completing the existing invitation flow.</div> : null}
+    </form>}
+  </Drawer>;
+}
+
+function EmployeeDetailsDrawer({ open, employee, loading, error, canInvite, onClose, onInviteComplete, onEdit }: { open: boolean; employee: Employee | null; loading: boolean; error: string; canInvite: boolean; onClose: () => void; onInviteComplete: () => void; onEdit?: () => void }) {
+  const [inviting, setInviting] = useState(false);
+  const [inviteError, setInviteError] = useState("");
+  const name = employee ? `${employee.first_name} ${employee.last_name}`.trim() : "Workforce member";
+  const invitationStatus = (employee?.invitation_status || "").toUpperCase();
+  const inviteEligible = Boolean(employee && employee.employment_status !== "FORMER" && !["PENDING", "ACCEPTED"].includes(invitationStatus));
+  async function sendInvitation() {
+    if (!employee) return;
+    setInviting(true); setInviteError("");
+    try {
+      await apiRequest(`/employees/${employee.id}/invitation`, { method: "POST", body: JSON.stringify({ roleName: employee.workforce_role }) });
+      onInviteComplete();
+      onClose();
+    } catch (caught) { setInviteError(caught instanceof Error ? caught.message : "Unable to send this invitation."); }
+    finally { setInviting(false); }
+  }
+  return <Drawer open={open} title="Workforce member" description="Work and contact information for this profile." onClose={onClose} footer={<><Button variant="secondary" onClick={onClose}>Close</Button>{canInvite && inviteEligible ? <Button variant="secondary" leading={<Mail size={14} />} busy={inviting} onClick={() => void sendInvitation()}>Send invitation</Button> : null}{onEdit ? <Button variant="primary" leading={<Pencil size={14} />} onClick={onEdit}>Edit profile</Button> : null}</>}>
+    {inviteError ? <div className="form-error" role="alert">{inviteError}</div> : null}
+    {loading ? <div className="loading-state">Loading profile details…</div> : error ? <div className="error-state"><h3>Details unavailable</h3><p>{error}</p></div> : employee ? <>
+      <div style={{ display: "flex", alignItems: "center", gap: 13, marginBottom: 24 }}><span className="user-avatar" style={{ width: 50, height: 50, fontSize: 15 }}>{initials(name)}</span><div><h3 style={{ fontSize: 17, margin: 0, color: "var(--text-strong)" }}>{name}</h3><p style={{ color: "var(--muted)", fontSize: 11, margin: "3px 0 0" }}>{employee.employee_code} · {roleDisplay[employee.workforce_role] ?? humanize(employee.workforce_role)}</p></div></div>
+      <div className="form-grid" style={{ marginBottom: 20 }}><Detail label="Employment status"><StatusBadge value={employee.employment_status} /></Detail><Detail label="Invitation status"><StatusBadge value={employee.invitation_status ?? "NOT_SENT"} /></Detail></div>
+      <DetailSection title="Work information"><Detail label="Job title" value={employee.designation} /><Detail label="Department" value={employee.department_name || "Not assigned"} /><Detail label="Reporting manager" value={employee.manager_name || "Not assigned"} /><Detail label="Joining date" value={formatDate(employee.joining_date)} /></DetailSection>
+      <DetailSection title="Contact details"><Detail label="Email" value={employee.email} /><Detail label="Phone" value={employee.phone} /><Detail label="Location" value={[employee.city, employee.country].filter(Boolean).join(", ")} /></DetailSection>
+      {employee.emergency_contact_name || employee.emergency_contact_phone ? <DetailSection title="Emergency contact"><Detail label="Name" value={employee.emergency_contact_name} /><Detail label="Relationship" value={employee.emergency_contact_relationship} /><Detail label="Phone" value={employee.emergency_contact_phone} /></DetailSection> : null}
+      {Array.isArray(employee.managed_departments) && employee.managed_departments.length ? <DetailSection title="Managed departments"><div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{employee.managed_departments.map((d) => <StatusBadge key={d.id} label={d.name} value={d.status ?? "ACTIVE"} />)}</div></DetailSection> : null}
+    </> : null}
+  </Drawer>;
+}
+
+function DetailSection({ title, children }: { title: string; children: ReactNode }) { return <section className="form-section"><h3 className="form-section-title">{title}</h3><div className="form-grid">{children}</div></section>; }
+function Detail({ label, value, children }: { label: string; value?: string | null; children?: ReactNode }) { return <div><p className="field-hint" style={{ margin: 0 }}>{label}</p><div style={{ marginTop: 4, color: "var(--text-strong)", fontSize: 12, fontWeight: 600 }}>{children ?? value ?? "—"}</div></div>; }
+function TableSkeleton() { return <div style={{ padding: 19, display: "grid", gap: 15 }}>{Array.from({ length: 5 }).map((_, i) => <div key={i} className="skeleton" style={{ height: 38 }} />)}</div>; }
+function RefreshIcon() { return <ArrowUpDown size={13} />; }

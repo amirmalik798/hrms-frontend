@@ -1,0 +1,168 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { ArrowRight, Building2, Eye, Pencil, Plus, Search, ShieldCheck, Users } from "lucide-react";
+import { useWorkspace } from "@/components/layout/WorkspaceGate";
+import { Button } from "@/components/ui/Button";
+import { Drawer } from "@/components/ui/Drawer";
+import { Field, SelectInput, TextArea, TextInput } from "@/components/ui/Field";
+import { Panel } from "@/components/ui/Panel";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { apiRequest } from "@/lib/api-client";
+import { formatNumber, humanize, initials } from "@/lib/format";
+
+interface Department {
+  id: string; name: string; description: string | null; status: string;
+  manager_id: string | null; manager_name: string | null; manager_employee_code?: string | null;
+  manager_eligible?: boolean; total_employee_count?: number; employee_count?: number;
+  active_employee_count?: number; inactive_employee_count?: number; former_employee_count?: number;
+  employees?: Array<{ id: string; employee_code: string; first_name: string; last_name: string; designation: string; employment_status: string }>;
+}
+interface DepartmentResponse { departments?: Department[]; pagination?: { total?: number; totalPages?: number }; message?: string }
+interface Manager { id: string; first_name: string; last_name: string; workforce_role: string; employee_code: string; employment_status: string }
+
+export function DepartmentsWorkspace() {
+  const { user } = useWorkspace();
+  const [rows, setRows] = useState<Department[]>([]);
+  const [managers, setManagers] = useState<Manager[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("ALL");
+  const [drawer, setDrawer] = useState<"create" | "edit" | "details" | null>(null);
+  const [selected, setSelected] = useState<Department | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [statusTarget, setStatusTarget] = useState<Department | null>(null);
+  const [statusSaving, setStatusSaving] = useState(false);
+  const canCreate = user.permissions.includes("department.create");
+  const canEdit = user.permissions.includes("department.update");
+  const canDeactivate = user.permissions.includes("department.deactivate");
+
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    try {
+      const params = new URLSearchParams({ page: "1", limit: "100", includeInactive: "true" });
+      if (query.trim()) params.set("q", query.trim());
+      if (status !== "ALL") params.set("status", status);
+      const result = await apiRequest<DepartmentResponse>(`/departments?${params.toString()}`);
+      setRows(result.departments ?? []);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load departments."); }
+    finally { setLoading(false); }
+  }, [query, status]);
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    let active = true;
+    apiRequest<{ employees?: Manager[] }>("/employees?page=1&limit=100&status=ACTIVE&sortBy=name&sortOrder=asc")
+      .then((result) => { if (active) setManagers((result.employees ?? []).filter((person) => person.workforce_role === "DEPARTMENT_MANAGER")); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  async function openDepartment(id: string, mode: "edit" | "details") {
+    setDrawer(mode); setSelected(null); setDetailLoading(true); setError("");
+    try {
+      const result = await apiRequest<{ department?: Department }>(`/departments/${id}`);
+      setSelected(result.department ?? null);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load department details."); }
+    finally { setDetailLoading(false); }
+  }
+
+  async function confirmDepartmentStatusChange() {
+    if (!statusTarget || statusSaving) return;
+    const nextStatus = statusTarget.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+    setStatusSaving(true); setError(""); setNotice("");
+    try {
+      const result = await apiRequest<{ employeesDeactivated?: number }>(`/departments/${encodeURIComponent(statusTarget.id)}`, {
+        method: "PATCH", body: JSON.stringify({ status: nextStatus }),
+      });
+      const deactivated = Number(result.employeesDeactivated ?? 0);
+      setNotice(nextStatus === "INACTIVE"
+        ? `Department deactivated. ${deactivated} currently active workforce member(s) were also marked inactive.`
+        : "Department activated. Its workforce members remain in their current employment statuses.");
+      setStatusTarget(null);
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to update department status.");
+    } finally { setStatusSaving(false); }
+  }
+
+  return <>
+    <PageHeader eyebrow="People" title="Departments" description="Keep teams easy to understand, with clear ownership and staffing context." action={canCreate ? <Button variant="primary" leading={<Plus size={15} />} onClick={() => { setSelected(null); setDrawer("create"); }}>Create department</Button> : undefined} />
+    {notice ? <div className="info-callout" style={{ marginBottom: 14 }}>{notice}</div> : null}
+    <Panel>
+      <div className="toolbar"><div className="toolbar-left"><label className="search-field"><Search size={15} /><input aria-label="Search departments" placeholder="Search departments or managers…" value={query} onChange={(e) => setQuery(e.target.value)} /></label><select className="filter-select" aria-label="Filter department status" value={status} onChange={(e) => setStatus(e.target.value)}><option value="ALL">All departments</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select></div><span style={{ color: "var(--muted)", fontSize: 11 }}>{loading ? "Loading…" : `${rows.length} departments`}</span></div>
+      {error && !rows.length ? <div className="error-state"><div className="state-icon"><Building2 size={18} /></div><h3>Departments unavailable</h3><p>{error}</p><Button onClick={() => void load()}>Try again</Button></div> : null}
+      {loading && !rows.length ? <div style={{ padding: 18, display: "grid", gap: 12 }}>{[1,2,3,4].map((n) => <div key={n} className="skeleton" style={{ height: 54 }} />)}</div> : null}
+      {!loading && !rows.length && !error ? <div className="empty-state"><div className="state-icon"><Building2 size={18} /></div><h3>{query ? "No departments found" : "No departments yet"}</h3><p>{query ? "Try a different search." : "Create your first department to establish a clear team structure."}</p>{canCreate ? <Button variant="primary" size="sm" leading={<Plus size={14} />} onClick={() => setDrawer("create")}>Create department</Button> : null}</div> : null}
+      {rows.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Department</th><th>Manager</th><th>Team size</th><th>Manager eligibility</th><th>Status</th><th /></tr></thead><tbody>{rows.map((department) => <tr key={department.id}>
+        <td><button type="button" onClick={() => void openDepartment(department.id, "details")} style={{ display: "flex", alignItems: "center", gap: 10, border: 0, padding: 0, background: "transparent", textAlign: "left" }}><span className="org-avatar"><Building2 size={15} /></span><span><span className="table-primary">{department.name}</span><span className="table-secondary">{department.description || "No description"}</span></span></button></td>
+        <td>{department.manager_name || <span style={{ color: "var(--subtle)" }}>Not assigned</span>}{department.manager_name ? <span className="table-secondary">{department.manager_employee_code ?? ""}</span> : null}</td>
+        <td><span className="table-primary">{formatNumber(department.total_employee_count ?? department.employee_count ?? 0)}</span><span className="table-secondary">{formatNumber(department.active_employee_count ?? 0)} active</span></td>
+        <td>{department.manager_id ? <StatusBadge value={department.manager_eligible ? "ACTIVE" : "REVIEW"} label={department.manager_eligible ? "Eligible" : "Needs attention"} /> : <span style={{ color: "var(--subtle)" }}>Unassigned</span>}</td>
+        <td><StatusBadge value={department.status} /></td>
+        <td><div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4, flexWrap: "wrap" }}><button type="button" className="icon-button" aria-label={`View ${department.name}`} onClick={() => void openDepartment(department.id, "details")}><Eye size={15} /></button>{canEdit ? <button type="button" className="icon-button" aria-label={`Edit ${department.name}`} onClick={() => void openDepartment(department.id, "edit")}><Pencil size={15} /></button> : null}{canEdit && (department.status === "ACTIVE" ? canDeactivate : true) ? <Button size="sm" variant={department.status === "ACTIVE" ? "danger" : "secondary"} onClick={() => setStatusTarget(department)}>{department.status === "ACTIVE" ? "Deactivate" : "Activate"}</Button> : null}</div></td>
+      </tr>)}</tbody></table></div> : null}
+    </Panel>
+    <Drawer open={Boolean(statusTarget)} title={statusTarget?.status === "ACTIVE" ? "Deactivate department?" : "Activate department?"} description={statusTarget?.status === "ACTIVE" ? "Deactivation also marks currently active workforce members assigned to this department as INACTIVE and deactivates their linked accounts. Former employees are not changed." : "The department will become available for use again. Workforce members who were deactivated with the department will not be automatically reactivated."} onClose={() => { if (!statusSaving) setStatusTarget(null); }} width="standard" footer={<><Button variant="secondary" disabled={statusSaving} onClick={() => setStatusTarget(null)}>Cancel</Button><Button variant={statusTarget?.status === "ACTIVE" ? "danger" : "primary"} busy={statusSaving} onClick={() => void confirmDepartmentStatusChange()}>{statusTarget?.status === "ACTIVE" ? "Confirm deactivation" : "Confirm activation"}</Button></>}>
+      {statusTarget ? <div className="form-section"><div className="detail-list"><div><span>Department</span><strong>{statusTarget.name}</strong></div><div><span>Current status</span><strong>{humanize(statusTarget.status)}</strong></div><div><span>Currently active members</span><strong>{formatNumber(statusTarget.active_employee_count ?? 0)}</strong></div></div>{statusTarget.status === "ACTIVE" ? <p className="form-note"><ShieldCheck size={15} /> The backend performs the workforce/account synchronization and audit logging in the same transaction.</p> : null}</div> : null}
+    </Drawer>
+    <DepartmentDrawer open={drawer === "create" || drawer === "edit"} mode={drawer === "edit" ? "edit" : "create"} department={selected} loading={detailLoading} managers={managers} canDeactivate={canDeactivate} onClose={() => setDrawer(null)} onSaved={() => { setDrawer(null); setNotice("Department saved successfully."); void load(); setTimeout(() => setNotice(""), 4000); }} />
+    <DepartmentDetailsDrawer open={drawer === "details"} department={selected} loading={detailLoading} error={error} canEdit={canEdit} onClose={() => { setDrawer(null); setError(""); }} onEdit={() => { if (selected) void openDepartment(selected.id, "edit"); }} />
+  </>;
+}
+
+function DepartmentDrawer({ open, mode, department, loading, managers, canDeactivate, onClose, onSaved }: { open: boolean; mode: "create" | "edit"; department: Department | null; loading: boolean; managers: Manager[]; canDeactivate: boolean; onClose: () => void; onSaved: () => void }) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [managerId, setManagerId] = useState("");
+  const [status, setStatus] = useState("ACTIVE");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    setName(department?.name ?? ""); setDescription(department?.description ?? ""); setManagerId(department?.manager_id ?? ""); setStatus(department?.status ?? "ACTIVE"); setError("");
+  }, [open, department]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSaving(true); setError("");
+    try {
+      if (mode === "create") {
+        await apiRequest("/departments", { method: "POST", body: JSON.stringify({ name: name.trim(), description: description.trim() || null }) });
+      } else if (department) {
+        const body: Record<string, unknown> = { name: name.trim(), description: description.trim() || null, manager_id: managerId || null };
+        if (canDeactivate) body.status = status;
+        await apiRequest(`/departments/${department.id}`, { method: "PATCH", body: JSON.stringify(body) });
+      }
+      onSaved();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to save this department."); }
+    finally { setSaving(false); }
+  }
+
+  return <Drawer open={open} title={mode === "create" ? "Create department" : "Edit department"} description={mode === "create" ? "Set the department name and purpose. Manager assignment can be completed after creation." : "Update the department details and its eligible manager assignment."} onClose={onClose} width="standard" footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="primary" busy={saving || loading} onClick={() => document.querySelector<HTMLFormElement>("#department-form")?.requestSubmit()}>{mode === "create" ? "Create department" : "Save changes"}</Button></>}>
+    {loading ? <div className="loading-state">Loading department…</div> : <form id="department-form" onSubmit={submit}>
+      {error ? <div className="form-error" role="alert">{error}</div> : null}
+      <section className="form-section"><h3 className="form-section-title"><Building2 size={15} /> Department details</h3><div className="form-grid">
+        <Field label="Department name"><TextInput required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Finance" /></Field>
+        <Field label="Description" hint="Optional · up to 2,000 characters"><TextArea maxLength={2000} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What does this team do?" /></Field>
+        {mode === "edit" ? <>
+          <Field label="Department manager" hint="The backend validates whether the selected manager is eligible."><SelectInput value={managerId} onChange={(e) => setManagerId(e.target.value)}><option value="">No manager assigned</option>{managers.map((manager) => <option key={manager.id} value={manager.id}>{manager.first_name} {manager.last_name} · {manager.employee_code}</option>)}</SelectInput></Field>
+          <Field label="Status"><SelectInput value={status} disabled={!canDeactivate && status === "INACTIVE"} onChange={(e) => setStatus(e.target.value)}><option value="ACTIVE">Active</option><option value="INACTIVE" disabled={!canDeactivate}>Inactive</option></SelectInput></Field>
+        </> : null}
+      </div></section>
+      <div className="form-note"><ShieldCheck size={15} /> Department creation does not assign an owner. Manager assignment is an explicit update and remains subject to server-side eligibility and permission checks.</div>
+    </form>}
+  </Drawer>;
+}
+
+function DepartmentDetailsDrawer({ open, department, loading, error, canEdit, onClose, onEdit }: { open: boolean; department: Department | null; loading: boolean; error: string; canEdit: boolean; onClose: () => void; onEdit: () => void }) {
+  return <Drawer open={open} title="Department details" description="Team composition and management ownership." onClose={onClose} width="standard" footer={<><Button variant="secondary" onClick={onClose}>Close</Button>{canEdit ? <Button variant="primary" leading={<Pencil size={14} />} onClick={onEdit}>Edit department</Button> : null}</>}>
+    {loading ? <div className="loading-state">Loading department…</div> : error ? <div className="error-state"><h3>Department unavailable</h3><p>{error}</p></div> : department ? <>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20 }}><span className="org-avatar" style={{ width: 46, height: 46 }}><Building2 size={19} /></span><div><h3 style={{ margin: 0, color: "var(--text-strong)", fontSize: 18 }}>{department.name}</h3><p style={{ margin: "3px 0 0", color: "var(--muted)", fontSize: 11 }}>{department.description || "No department description"}</p></div></div>
+      <div className="form-grid" style={{ marginBottom: 22 }}><div><p className="field-hint">Status</p><StatusBadge value={department.status} /></div><div><p className="field-hint">Team size</p><strong style={{ fontSize: 17, color: "var(--text-strong)" }}>{formatNumber(department.total_employee_count ?? 0)}</strong></div><div><p className="field-hint">Active members</p><strong style={{ fontSize: 17, color: "var(--text-strong)" }}>{formatNumber(department.active_employee_count ?? 0)}</strong></div><div><p className="field-hint">Manager</p><strong style={{ fontSize: 12, color: "var(--text-strong)" }}>{department.manager_name || "Not assigned"}</strong></div></div>
+      <section className="form-section"><h3 className="form-section-title"><Users size={15} /> Department members</h3>{department.employees?.length ? department.employees.map((employee) => <div className="task-row" key={employee.id}><div><strong>{employee.first_name} {employee.last_name}</strong><span>{employee.employee_code} · {employee.designation || "—"}</span></div><StatusBadge value={employee.employment_status} /></div>) : <div className="empty-state" style={{ padding: 20 }}><h3>No members listed</h3><p>There are currently no employee records associated with this department.</p></div>}</section>
+      <div className="form-note"><ShieldCheck size={15} /> Departments can be edited, activated, or deactivated. Permanent deletion is not supported by the current backend API, so this workspace preserves the department record and its history.</div>
+    </> : null}
+  </Drawer>;
+}
