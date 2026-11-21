@@ -95,7 +95,7 @@ function timeLabel(value: string | null | undefined, timeZone: string) {
 }
 
 export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
-  const { user, workDate, timeZone, timeZoneStatus } = useWorkspace();
+  const { user, workDate, timeZone: workspaceTimeZone, timeZoneStatus } = useWorkspace();
   const [entries, setEntries] = useState<AttendanceEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -104,7 +104,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
   const [toDate, setToDate] = useState("");
   const [appliedFromDate, setAppliedFromDate] = useState("");
   const [appliedToDate, setAppliedToDate] = useState("");
-  const [timeZone, setTimeZone] = useState("Africa/Kigali");
+  const [timeZone, setTimeZone] = useState(workspaceTimeZone || "Africa/Kigali");
   const [rangeReady, setRangeReady] = useState(false);
   const [rangeRetry, setRangeRetry] = useState(0);
   const [appliedRangeRevision, setAppliedRangeRevision] = useState(0);
@@ -123,7 +123,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
       setLoading(true); setError(""); setWarning(""); setRangeReady(false);
       try {
         if (timeZoneStatus !== "ready") throw new Error("The organization timezone could not be verified. Attendance dates cannot be initialized safely yet.");
-        const organizationDate = getISODateInTimeZone(timeZone);
+        const organizationDate = getISODateInTimeZone(workspaceTimeZone);
         const initial = await apiRequest<CalendarPayload>(`/attendance/calendar?fromDate=${organizationDate}&toDate=${organizationDate}${selfOnly ? "&scope=self" : ""}`);
         const authoritativeDate = initial.today;
         if (!authoritativeDate || !/^\d{4}-\d{2}-\d{2}$/.test(authoritativeDate)) {
@@ -137,7 +137,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
         setFromDate(start); setToDate(end);
         setAppliedFromDate(start); setAppliedToDate(end);
         if (organizationDate !== authoritativeDate) {
-          setWarning(`The organization calendar returned ${authoritativeDate}; the initial date was requested using ${initial.timeZone || timeZone}.`);
+          setWarning(`The organization calendar returned ${authoritativeDate}; the initial date was requested using ${initial.timeZone || workspaceTimeZone}.`);
         }
         setRangeReady(true);
       } catch (caught) {
@@ -150,7 +150,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
     return () => { active = false; };
   // Re-seed only when the authenticated identity/page scope changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageKey, user.employeeId, rangeRetry, timeZone, timeZoneStatus]);
+  }, [pageKey, user.employeeId, rangeRetry, workspaceTimeZone, timeZoneStatus]);
 
   const load = useCallback(async (silent = false) => {
     if (!appliedFromDate || !appliedToDate) return;
