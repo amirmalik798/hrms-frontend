@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, CalendarClock, CheckCircle2, Clock3, CreditCard, FileImage, History, ShieldCheck } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
@@ -36,10 +36,12 @@ interface PaymentRecord {
 }
 interface LicensePayload { license?: LicenseDetails; payments?: PaymentRecord[]; paymentHistoryLimit?: number }
 
-function dateTime(value: string | null) {
+function dateTime(value: string | null, timeZone: string) {
   if (!value) return "Not available";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Not available" : new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
+  if (Number.isNaN(date.getTime())) return "Not available";
+  try { return new Intl.DateTimeFormat("en-GB", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone }).format(date); }
+  catch { return new Intl.DateTimeFormat("en-GB", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "UTC" }).format(date); }
 }
 function amount(value: string, currency: string) {
   const number = Number(value);
@@ -49,7 +51,8 @@ function amount(value: string, currency: string) {
 }
 
 export function LicenseWorkspace() {
-  const { currencyCode } = useWorkspace();
+  const { currencyCode, timeZone } = useWorkspace();
+  const loadSequenceRef = useRef(0);
   const [license, setLicense] = useState<LicenseDetails | null>(null);
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,13 +67,18 @@ export function LicenseWorkspace() {
   const [proofFile, setProofFile] = useState<File | null>(null);
 
   const load = useCallback(async (silent = false) => {
+    const requestId = ++loadSequenceRef.current;
     if (!silent) setLoading(true); setError("");
     try {
       const result = await apiRequest<LicensePayload>("/org/license");
+      if (requestId !== loadSequenceRef.current) return;
       setLicense(result.license || null);
       setPayments(Array.isArray(result.payments) ? result.payments : []);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load license information."); }
-    finally { if (!silent) setLoading(false); }
+    } catch (caught) {
+      if (requestId === loadSequenceRef.current) setError(caught instanceof Error ? caught.message : "Unable to load license information.");
+    } finally {
+      if (!silent && requestId === loadSequenceRef.current) setLoading(false);
+    }
   }, []);
   useEffect(() => { void load(); }, [load]);
   useSmartRefresh(() => load(true), !formOpen && !confirmOpen && !submitting);
@@ -112,12 +120,12 @@ export function LicenseWorkspace() {
     {license ? <>
       <Panel className="license-status-panel panel-pad">
         <div className="license-status-head"><span className="license-status-icon"><ShieldCheck size={21} /></span><div><p className="eyebrow">SUBSCRIPTION STATUS</p><h2>{statusLabel.replaceAll("_", " ")}</h2><p>{statusDetail}</p></div><StatusBadge value={statusLabel} /></div>
-        <div className="license-facts"><div><span>Valid from</span><strong>{dateTime(license.startsAt)}</strong></div><div><span>Expires</span><strong>{dateTime(license.expiresAt)}</strong></div><div><span>Remaining days</span><strong>{Math.max(0, license.remainingDays).toLocaleString()}</strong></div><div><span>Activation source</span><strong>{license.activationSource?.replaceAll("_", " ") || "Not activated"}</strong></div></div>
+        <div className="license-facts"><div><span>Valid from</span><strong>{dateTime(license.startsAt, timeZone)}</strong></div><div><span>Expires</span><strong>{dateTime(license.expiresAt, timeZone)}</strong></div><div><span>Remaining days</span><strong>{Math.max(0, license.remainingDays).toLocaleString()}</strong></div><div><span>Activation source</span><strong>{license.activationSource?.replaceAll("_", " ") || "Not activated"}</strong></div></div>
         <div className="license-action-row"><p>Submitting proof does not make a payment or activate your subscription. The platform administrator reviews each submission.</p><Button variant="primary" leading={<CreditCard size={14} />} disabled={pending} onClick={() => { setError(""); setFormOpen(true); }}>{pending ? "Payment awaiting review" : "Submit payment proof"}</Button></div>
       </Panel>
       <Panel>
         <div className="panel-heading"><div><h2>Payment history</h2><p>Up to {50} recent submissions, including review outcomes.</p></div><span className="metric-icon"><History size={16} /></span></div>
-        {payments.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Submitted</th><th>Amount</th><th>Reference</th><th>Proof</th><th>Status</th><th>Review note</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.id}><td>{dateTime(payment.createdAt)}</td><td><span className="table-primary">{amount(payment.amount, payment.currencyCode)}</span></td><td>{payment.transactionReference || "—"}</td><td>{payment.proofImageFilename || payment.proofImageMimeType}</td><td><StatusBadge value={payment.status} /></td><td>{payment.rejectionReason || (payment.reviewedAt ? `Reviewed ${dateTime(payment.reviewedAt)}` : "Awaiting review")}</td></tr>)}</tbody></table></div> : <div className="empty-state"><div className="state-icon"><History size={18} /></div><h3>No payment submissions yet</h3><p>Once you submit payment proof, its verification history will appear here.</p></div>}
+        {payments.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Submitted</th><th>Amount</th><th>Reference</th><th>Proof</th><th>Status</th><th>Review note</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.id}><td>{dateTime(payment.createdAt, timeZone)}</td><td><span className="table-primary">{amount(payment.amount, payment.currencyCode)}</span></td><td>{payment.transactionReference || "—"}</td><td>{payment.proofImageFilename || payment.proofImageMimeType}</td><td><StatusBadge value={payment.status} /></td><td>{payment.rejectionReason || (payment.reviewedAt ? `Reviewed ${dateTime(payment.reviewedAt, timeZone)}` : "Awaiting review")}</td></tr>)}</tbody></table></div> : <div className="empty-state"><div className="state-icon"><History size={18} /></div><h3>No payment submissions yet</h3><p>Once you submit payment proof, its verification history will appear here.</p></div>}
       </Panel>
     </> : null}
 

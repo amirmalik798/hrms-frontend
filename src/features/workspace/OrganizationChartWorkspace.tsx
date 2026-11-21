@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Network, Search, Users, UserRound, Building2, ShieldCheck } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
@@ -39,15 +39,19 @@ export function OrganizationChartWorkspace() {
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [truncated, setTruncated] = useState(false);
+  const loadSequenceRef = useRef(0);
 
   const load = useCallback(async (silent = false) => {
+    const requestId = ++loadSequenceRef.current;
     if (!silent) setLoading(true); setError(""); if (!silent) setTruncated(false);
     try {
       if (user.role === "HR_MANAGER") {
         const result = await apiRequest<{ employees?: PersonNode[] }>("/hr-manager/organization-chart");
+        if (requestId !== loadSequenceRef.current) return;
         setPeople(Array.isArray(result.employees) ? result.employees : []);
       } else if (user.role === "ORGANIZATION_ADMIN") {
         const first = await apiRequest<{ employees?: PersonNode[]; pagination?: { totalPages?: number } }>("/employees?page=1&limit=100&sortBy=name&sortOrder=asc");
+        if (requestId !== loadSequenceRef.current) return;
         const totalPages = Math.max(1, first.pagination?.totalPages || 1);
         const cappedPages = Math.min(totalPages, 100);
         const pages: PersonNode[][] = [Array.isArray(first.employees) ? first.employees : []];
@@ -56,13 +60,14 @@ export function OrganizationChartWorkspace() {
           const batch = await Promise.all(pageNumbers.map((page) => apiRequest<{ employees?: PersonNode[] }>(`/employees?page=${page}&limit=100&sortBy=name&sortOrder=asc`)));
           pages.push(...batch.map((result) => Array.isArray(result.employees) ? result.employees : []));
         }
+        if (requestId !== loadSequenceRef.current) return;
         setPeople(pages.flat());
         setTruncated(totalPages > cappedPages);
       } else {
         throw new Error("Organization chart access is not available for this role.");
       }
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load the organization chart."); }
-    finally { if (!silent) setLoading(false); }
+    } catch (caught) { if (requestId === loadSequenceRef.current) setError(caught instanceof Error ? caught.message : "Unable to load the organization chart."); }
+    finally { if (!silent && requestId === loadSequenceRef.current) setLoading(false); }
   }, [user.role]);
 
   useEffect(() => { void load(); }, [load]);
