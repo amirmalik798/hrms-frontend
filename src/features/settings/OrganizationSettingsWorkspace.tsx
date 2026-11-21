@@ -29,6 +29,7 @@ export function OrganizationSettingsWorkspace() {
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [organization, setOrganization] = useState<Organization>({ name: user.organizationName, slug: "", contactEmail: "", contactPhone: "", address: "", country: "" });
   const [loading, setLoading] = useState(true);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState("");
@@ -44,6 +45,7 @@ export function OrganizationSettingsWorkspace() {
       setSettings({ ...defaultSettings, ...(result.settings ?? {}), workingDays: Array.isArray(result.settings?.workingDays) ? result.settings.workingDays : defaultSettings.workingDays, legalEntityName: result.settings?.legalEntityName ?? "", legalEntityCountryCode: result.settings?.legalEntityCountryCode ?? result.settings?.countryCode ?? "RW" });
       setOrganization({ name: result.organization?.name ?? user.organizationName, slug: result.organization?.slug ?? "", contactEmail: result.organization?.contactEmail ?? "", contactPhone: result.organization?.contactPhone ?? "", address: result.organization?.address ?? "", country: result.organization?.country ?? "" });
       setDirty(false); dirtyRef.current = false;
+      setSettingsLoaded(true);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load organization settings."); }
     finally { if (!silent) setLoading(false); }
   }, [user.organizationName]);
@@ -86,7 +88,7 @@ export function OrganizationSettingsWorkspace() {
     {setupRequired ? <div className="info-callout" style={{ marginBottom: 16 }}><ShieldCheck size={17} />Before using the organization workspace, review and complete the required settings below. Your changes are saved to the existing organization settings API.</div> : null}
     {error ? <div role="alert" className="form-error" style={{ marginBottom: 14 }}>{error}</div> : null}
     {notice ? <div role="status" className="success-callout" style={{ marginBottom: 14 }}><CheckCircle2 size={15} />{notice}</div> : null}
-    {loading ? <Panel><div className="loading-state">Loading organization settings…</div></Panel> : <form onSubmit={save}>
+    {loading ? <Panel><div className="loading-state">Loading organization settings…</div></Panel> : !settingsLoaded ? <Panel><div className="error-state"><div className="state-icon"><AlertCircle size={18} /></div><h3>Organization settings are unavailable</h3><p>The settings could not be verified. The placeholder values have not been enabled for editing, so they cannot accidentally overwrite the organization configuration.</p><Button variant="secondary" onClick={() => void load()}>Retry loading settings</Button></div></Panel> : <form onSubmit={save}>
       <Panel style={{ marginBottom: 16 }}>
         <PanelHeading title="Regional & time settings" description="These are the authoritative settings used for dates, shifts, and pay calculations." />
         <div className="panel-pad form-grid">
@@ -114,7 +116,7 @@ export function OrganizationSettingsWorkspace() {
       </Panel>
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
         {setupRequired ? <span className="field-hint">{requiredReady ? "Required settings are populated. Save changes, then complete the setup review." : "Complete the required fields before setup can be reviewed."}</span> : <span className="field-hint">Changes affect future workspace date, time, and currency formatting.</span>}
-        <div style={{ display: "flex", gap: 8 }}><Button variant="secondary" type="button" leading={<Clock3 size={14} />} onClick={() => void load()}>Discard changes</Button><Button variant="primary" type="submit" busy={saving} leading={<Save size={14} />}>Save settings</Button>{setupRequired ? <Button variant="primary" type="button" busy={completing} disabled={!requiredReady || saving} leading={<ShieldCheck size={14} />} onClick={() => void completeSetup()}>Complete setup</Button> : null}</div>
+        <div style={{ display: "flex", gap: 8 }}><Button variant="secondary" type="button" disabled={!dirty || saving || completing} leading={<Clock3 size={14} />} onClick={() => void load()}>Discard changes</Button><Button variant="primary" type="submit" busy={saving} disabled={!settingsLoaded || completing} leading={<Save size={14} />}>Save settings</Button>{setupRequired ? <Button variant="primary" type="button" busy={completing} disabled={!settingsLoaded || !requiredReady || saving || dirty || completing} leading={<ShieldCheck size={14} />} onClick={() => void completeSetup()}>Complete setup</Button> : null}</div>
       </div>
     </form>}
   </>;
