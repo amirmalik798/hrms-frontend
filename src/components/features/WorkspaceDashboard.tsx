@@ -34,6 +34,10 @@ interface DashboardData {
 
 export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
   const { user, timeZone } = useWorkspace();
+  const organizationHour = useMemo(() => {
+    try { return Number(new Intl.DateTimeFormat("en-US", { timeZone, hour: "2-digit", hourCycle: "h23" }).format(new Date())); }
+    catch { return new Date().getHours(); }
+  }, [timeZone]);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -102,7 +106,7 @@ export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
   return <>
     <PageHeader eyebrow={roleLabels[role]} title={heading} description={description} />
     <div className="dashboard-intro" style={{ marginBottom: 18 }}>
-      <div><h2>{role === "EMPLOYEE" ? `Welcome to your workspace` : `Good ${new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}`}, {user.displayName || roleLabels[role]}.</h2><p>{role === "EMPLOYEE" ? "Your personal work information is all in one place." : `Here is the latest view from ${user.organizationName}.`}</p></div>
+      <div><h2>{role === "EMPLOYEE" ? `Welcome to your workspace` : `Good ${organizationHour < 12 ? "morning" : organizationHour < 18 ? "afternoon" : "evening"}`}, {user.displayName || roleLabels[role]}.</h2><p>{role === "EMPLOYEE" ? "Your personal work information is all in one place." : `Here is the latest view from ${user.organizationName}.`}</p></div>
       <span className="date-chip"><CalendarClock size={14} /> {formatDate(data?.workDate ?? new Date().toISOString(), timeZone)}</span>
     </div>
 
