@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { CalendarClock, Clock3, FileClock, Plus, RefreshCw } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
+import { useAttendanceRefresh } from "@/lib/attendance-events";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/ui/Field";
@@ -59,6 +60,7 @@ export function MyRequestsWorkspace() {
   }, [user.role, user.employeeId, workDate, eventId]);
 
   useEffect(() => { void load(); }, [load]);
+  useAttendanceRefresh(() => { void load(); });
 
   const pendingCount = useMemo(() => [...corrections, ...overtime].filter((request) => request.status === "PENDING").length, [corrections, overtime]);
   const selectedEvent = recentEvents.find((event) => event.id === eventId);
