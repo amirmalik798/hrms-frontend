@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Panel } from "@/components/ui/Panel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { apiRequest, pickArray, stringValue } from "@/lib/api-client";
-import { formatDate, humanize } from "@/lib/format";
+import { humanize } from "@/lib/format";
 import { useSmartRefresh } from "@/lib/smart-refresh";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 
@@ -16,8 +16,25 @@ interface Message { id: string; senderUserId: string; senderName: string; sender
 interface InboxPayload { currentUserId?: string; conversations?: Conversation[]; canStartNew?: boolean; recipientName?: string | null; recipientRole?: string | null }
 interface ThreadPayload { conversation?: { id: string; subject: string; otherName: string; otherRole: string }; messages?: Message[] }
 
+function formatMessageTimestamp(value: string | null | undefined, timeZone: string) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hour12: true, timeZone,
+    }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hour12: true,
+    }).format(date);
+  }
+}
+
 export function MessagesWorkspace() {
-  const { user } = useWorkspace();
+  const { user, timeZone } = useWorkspace();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
@@ -103,13 +120,13 @@ export function MessagesWorkspace() {
       <div className="message-layout">
         <aside className="message-inbox">
           <div className="message-inbox-heading"><div><strong>Inbox</strong><span>{conversations.length} conversations</span></div>{canStartNew ? <Button size="sm" variant="primary" leading={<Plus size={13} />} onClick={() => { setCompose(true); setSelectedId(""); }}>New</Button> : null}</div>
-          {loading && !conversations.length ? <div className="loading-state"><LoaderCircle className="spin" size={17} /><p>Loading messages…</p></div> : conversations.length ? conversations.map((conversation) => <button type="button" className={`message-thread-link ${selectedId === conversation.id ? "message-thread-active" : ""}`} key={conversation.id} onClick={() => { setCompose(false); setSelectedId(conversation.id); setError(""); setNotice(""); }}><ProfilePhoto name={conversation.otherName} employeeId={conversation.otherEmployeeId} conversationId={conversation.id} className="user-avatar" /><span className="message-thread-copy"><strong>{conversation.subject}</strong><span>{conversation.otherName} · {humanize(conversation.otherRole)}</span><small>{conversation.lastMessage}</small></span>{conversation.unreadCount ? <span className="task-count">{conversation.unreadCount}</span> : null}</button>) : <div className="empty-state" style={{ padding: 24 }}><div className="state-icon"><Mail size={18} /></div><h3>No messages yet</h3><p>Your conversations will appear here.</p></div>}
+          {loading && !conversations.length ? <div className="loading-state"><LoaderCircle className="spin" size={17} /><p>Loading messages…</p></div> : conversations.length ? conversations.map((conversation) => <button type="button" className={`message-thread-link ${selectedId === conversation.id ? "message-thread-active" : ""}`} key={conversation.id} onClick={() => { setCompose(false); setSelectedId(conversation.id); setError(""); setNotice(""); }}><ProfilePhoto name={conversation.otherName} employeeId={conversation.otherEmployeeId} conversationId={conversation.id} className="user-avatar" /><span className="message-thread-copy"><strong>{conversation.subject}</strong><span>{conversation.otherName} · {humanize(conversation.otherRole)}</span><small>{conversation.lastMessage}</small><small className="message-thread-time">{formatMessageTimestamp(conversation.lastMessageAt, timeZone)}</small></span>{conversation.unreadCount ? <span className="task-count">{conversation.unreadCount}</span> : null}</button>) : <div className="empty-state" style={{ padding: 24 }}><div className="state-icon"><Mail size={18} /></div><h3>No messages yet</h3><p>Your conversations will appear here.</p></div>}
           {canStartNew ? <p className="message-recipient-note"><ShieldCheck size={13} /> New conversations go to {recipientName || "your assigned higher-up"}. Recipient selection is controlled by the backend.</p> : <p className="message-recipient-note"><ShieldCheck size={13} /> New conversations are unavailable until an eligible reporting-line recipient is configured.</p>}
         </aside>
         <section className="message-conversation">
           {compose ? <form className="message-compose" onSubmit={sendNew}><div className="message-conversation-heading"><div><strong>New conversation</strong><span>To: {recipientName || "Your higher-up"}</span></div></div><label className="field"><span className="field-label">Subject</span><input className="text-input" required minLength={3} maxLength={160} value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="What would you like to discuss?" /></label><label className="field"><span className="field-label">Message</span><textarea className="text-input text-area" required maxLength={4000} rows={8} value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Write your message…" /></label><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button type="button" variant="secondary" onClick={() => setCompose(false)}>Cancel</Button><Button type="submit" variant="primary" busy={sending} leading={<Send size={14} />}>Send message</Button></div></form> : selected ? <>
             <header className="message-conversation-heading"><ProfilePhoto name={otherName || selected.otherName} employeeId={selected.otherEmployeeId} conversationId={selected.id} className="user-avatar" /><div><strong>{threadSubject || selected.subject}</strong><span>{otherName || selected.otherName} · {humanize(otherRole || selected.otherRole)}</span></div></header>
-            <div className="message-list">{threadLoading && !messages.length ? <div className="loading-state"><LoaderCircle className="spin" size={17} /><p>Loading conversation…</p></div> : messages.map((message) => <div className={`message-bubble-wrap ${message.senderUserId === currentUserId ? "message-mine" : ""}`} key={message.id}><div className="message-bubble"><div className="message-bubble-meta"><strong>{message.senderUserId === currentUserId ? "You" : message.senderName}</strong><span>{formatDate(message.createdAt)}</span></div><p>{message.body}</p>{message.senderUserId === currentUserId ? <small>{message.readAt ? <><CheckCheck size={12} /> Read</> : message.deliveredAt ? <><CheckCheck size={12} /> Delivered</> : <><Check size={12} /> Sent</>}</small> : null}</div></div>)}</div>
+            <div className="message-list">{threadLoading && !messages.length ? <div className="loading-state"><LoaderCircle className="spin" size={17} /><p>Loading conversation…</p></div> : messages.map((message) => <div className={`message-bubble-wrap ${message.senderUserId === currentUserId ? "message-mine" : ""}`} key={message.id}><div className="message-bubble"><div className="message-bubble-meta"><strong>{message.senderUserId === currentUserId ? "You" : message.senderName}</strong><span>{formatMessageTimestamp(message.createdAt, timeZone)}</span></div><p>{message.body}</p>{message.senderUserId === currentUserId ? <small>{message.readAt ? <><CheckCheck size={12} /> Read</> : message.deliveredAt ? <><CheckCheck size={12} /> Delivered</> : <><Check size={12} /> Sent</>}</small> : null}</div></div>)}</div>
             <form className="message-reply" onSubmit={sendReply}><textarea className="text-input" rows={2} required maxLength={4000} value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Write a reply…" /><Button type="submit" variant="primary" busy={sending} leading={<Send size={14} />}>Send</Button></form>
           </> : <div className="empty-state" style={{ margin: "auto" }}><div className="state-icon"><MessageCircle size={18} /></div><h3>Select a conversation</h3><p>Choose a message on the left to read and reply.</p></div>}
         </section>
@@ -127,6 +144,7 @@ export function MessagesWorkspace() {
       .message-thread-copy strong { display:block; color:var(--text-strong); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .message-thread-copy span { display:block; color:var(--muted); font-size:10px; margin-top:3px; }
       .message-thread-copy small { display:block; color:var(--subtle); font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:5px; }
+      .message-thread-copy .message-thread-time { color:var(--subtle); font-size:9px; margin-top:3px; }
       .message-recipient-note { display:flex; gap:7px; padding:13px; margin:auto 0 0; color:var(--muted); font-size:10px; line-height:1.5; border-top:1px solid var(--border); }
       .message-conversation { min-width:0; display:flex; flex-direction:column; }
       .message-conversation-heading { padding:15px 18px; display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--border); }
