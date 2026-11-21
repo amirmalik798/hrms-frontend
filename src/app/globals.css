@@ -971,3 +971,52 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Department drawer layout: keep the purpose field readable and the form calm. */
+.department-form-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+.department-form-grid .text-area {
+  min-height: 116px;
+}
+.department-form-grid .field-hint {
+  margin-top: 1px;
+}
+.department-form-grid + .form-note {
+  margin-top: 18px;
+}
+@media (min-width: 560px) {
+  .department-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .department-form-grid > .field:nth-child(2) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Raise secondary-copy legibility across all workspaces without enlarging icons. */
+.sidebar-workspace-name { font-size: 13px; }
+.sidebar-workspace-role { font-size: 12px; }
+.nav-group-label { font-size: 11px; }
+.nav-link { font-size: 14px; }
+.topbar-org span { font-size: 12px; }
+.user-menu-copy span { font-size: 11px; }
+.metric-foot { font-size: 12px; }
+.table-secondary { font-size: 12px; }
+.task-row span, .activity-row span { font-size: 12px; }
+.field-hint, .field-error { font-size: 12px; }
+.form-note, .form-error { font-size: 12px; }
+.empty-state p, .error-state p, .loading-state p { font-size: 13px; }
+.status-badge { font-size: 12px; }
+.date-chip { font-size: 12px; }
+.button-sm { font-size: 12px; }
+@media (max-width: 559px) {
+  .department-form-grid,
+  .department-form-grid > .field:nth-child(2) {
+    grid-template-columns: 1fr;
+    grid-column: auto;
+  }
+}
