@@ -50,6 +50,18 @@ export function ReportsWorkspace() {
   useEffect(() => { void loadTargets(); }, [loadTargets]);
   useEffect(() => { if (workDate) { setToDate(workDate); setFromDate((current) => current === monthStart(todayISO()) ? monthStart(workDate) : current); setToMonth((current) => current === todayISO().slice(0, 7) ? workDate.slice(0, 7) : current); setFromMonth((current) => current === todayISO().slice(0, 7) ? workDate.slice(0, 7) : current); } }, [workDate]);
 
+  function applyDatePreset(preset: "7d" | "4d" | "3m" | "6m" | "12m") {
+    const end = workDate || todayISO();
+    const start = preset.endsWith("d")
+      ? shiftDate(end, -(Number(preset.slice(0, -1)) - 1))
+      : shiftMonthsClamped(end, -Number(preset.slice(0, -1)));
+    setFromDate(start);
+    setToDate(end);
+    setReport(null);
+    setError("");
+    setNotice("");
+  }
+
   const selectedTarget = useMemo(() => targets.find((target) => target.employeeId === targetId), [targets, targetId]);
   const canGenerateOrganizationSeries = user.role === "ORGANIZATION_ADMIN" || user.role === "HR_MANAGER";
   const monthSpan = isMonth(fromMonth) && isMonth(toMonth) && fromMonth <= toMonth
@@ -151,6 +163,14 @@ export function ReportsWorkspace() {
         <Field label="From date"><TextInput type="date" value={fromDate} max={toDate} onChange={(event) => { setFromDate(event.target.value); setReport(null); }} /></Field>
         <Field label="To date"><TextInput type="date" value={toDate} min={fromDate} onChange={(event) => { setToDate(event.target.value); setReport(null); }} /></Field>
       </div>
+      <div className="report-date-presets" role="group" aria-label="Attendance report date range presets" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 7, marginTop: 12 }}>
+        <span className="field-hint" style={{ marginRight: 3 }}>Quick range:</span>
+        <button type="button" className="button button-sm button-secondary" onClick={() => applyDatePreset("7d")}>Last 7 days</button>
+        <button type="button" className="button button-sm button-secondary" onClick={() => applyDatePreset("4d")}>Last 4 days</button>
+        <button type="button" className="button button-sm button-secondary" onClick={() => applyDatePreset("3m")}>Last 3 months</button>
+        <button type="button" className="button button-sm button-secondary" onClick={() => applyDatePreset("6m")}>Last 6 months</button>
+        <button type="button" className="button button-sm button-secondary" onClick={() => applyDatePreset("12m")}>Last 12 months</button>
+      </div>
       {selectedTarget ? <div className="report-selected-person"><ProfilePhoto name={`${selectedTarget.firstName} ${selectedTarget.lastName}`} employeeId={selectedTarget.employeeId} currentUser={user.role === "EMPLOYEE" && selectedTarget.employeeId === user.employeeId} /><span><strong>{selectedTarget.firstName} {selectedTarget.lastName}</strong><small>{selectedTarget.employeeCode} · {selectedTarget.departmentName || "No department"}</small></span></div> : null}
       <div className="report-filter-footer"><p>Organization timezone: <strong>{timeZone}</strong>. Maximum report span: 24 calendar months.</p><div style={{ display: "flex", gap: 8 }}><Button variant="secondary" leading={<FileBarChart size={14} />} busy={generating} disabled={loadingTargets || (!targetId && user.role !== "EMPLOYEE")} onClick={() => void generate()}>Preview report</Button><Button variant="primary" leading={<ArrowDownToLine size={14} />} busy={downloading} disabled={loadingTargets || (!targetId && user.role !== "EMPLOYEE")} onClick={() => void downloadPdf()}>Download PDF</Button></div></div>
     </Panel>
@@ -166,6 +186,18 @@ export function ReportsWorkspace() {
 }
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 function monthStart(value: string) { return `${value.slice(0, 7)}-01`; }
+function shiftDate(value: string, days: number) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+function shiftMonthsClamped(value: string, months: number) {
+  const [year, month, day] = value.split("-").map(Number);
+  const targetMonthIndex = year * 12 + (month - 1) + months;
+  const targetYear = Math.floor(targetMonthIndex / 12);
+  const targetMonth = ((targetMonthIndex % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+}
 function isDate(value: string) { return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`)); }
 function monthOrdinal(value: string) { const [year, month] = value.split("-").map(Number); return year * 12 + month; }
 function isMonth(value: string) { return /^\d{4}-(0[1-9]|1[0-2])$/.test(value); }
