@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ArrowRight, Building2, Eye, Pencil, Plus, Power, PowerOff, Search, ShieldCheck, Users } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { useSmartRefresh } from "@/lib/smart-refresh";
@@ -40,6 +40,8 @@ export function DepartmentsWorkspace() {
   const [notice, setNotice] = useState("");
   const [statusTarget, setStatusTarget] = useState<Department | null>(null);
   const [statusSaving, setStatusSaving] = useState(false);
+  const listRequestRef = useRef(0);
+  const detailRequestRef = useRef(0);
   // Organization Admin is implicitly authorized by the backend's
   // hasTenantPermission() helper. Its session endpoint intentionally omits
   // a permissions array, so mirror that role-level access in the UI rather
@@ -50,6 +52,7 @@ export function DepartmentsWorkspace() {
   const canDeactivate = isOrganizationAdmin || user.permissions.includes("department.deactivate");
 
   const load = useCallback(async (silent = false) => {
+    const requestId = ++listRequestRef.current;
     if (!silent) setLoading(true); setError("");
     try {
       const allDepartments = await loadAllPages<Department>(async (page) => {
@@ -59,9 +62,9 @@ export function DepartmentsWorkspace() {
         const result = await apiRequest<DepartmentResponse>(`/departments?${params.toString()}`);
         return { items: result.departments ?? [], totalPages: result.pagination?.totalPages };
       });
-      setRows(allDepartments);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load departments."); }
-    finally { if (!silent) setLoading(false); }
+      if (requestId === listRequestRef.current) setRows(allDepartments);
+    } catch (caught) { if (requestId === listRequestRef.current) setError(caught instanceof Error ? caught.message : "Unable to load departments."); }
+    finally { if (!silent && requestId === listRequestRef.current) setLoading(false); }
   }, [query, status]);
   useEffect(() => { void load(); }, [load]);
   useSmartRefresh(() => load(true), !drawer && !statusTarget && !statusSaving && !detailLoading);
@@ -78,12 +81,13 @@ export function DepartmentsWorkspace() {
   }, []);
 
   async function openDepartment(id: string, mode: "edit" | "details") {
+    const requestId = ++detailRequestRef.current;
     setDrawer(mode); setSelected(null); setDetailLoading(true); setError("");
     try {
       const result = await apiRequest<{ department?: Department }>(`/departments/${id}`);
-      setSelected(result.department ?? null);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load department details."); }
-    finally { setDetailLoading(false); }
+      if (requestId === detailRequestRef.current) setSelected(result.department ?? null);
+    } catch (caught) { if (requestId === detailRequestRef.current) setError(caught instanceof Error ? caught.message : "Unable to load department details."); }
+    finally { if (requestId === detailRequestRef.current) setDetailLoading(false); }
   }
 
   async function confirmDepartmentStatusChange() {
@@ -158,7 +162,7 @@ function DepartmentDrawer({ open, mode, department, loading, managers, managerOp
     finally { setSaving(false); }
   }
 
-  return <Drawer open={open} title={mode === "create" ? "Create department" : "Edit department"} description={mode === "create" ? "Set the department name and purpose. Manager assignment can be completed after creation." : "Update the department details and its eligible manager assignment."} onClose={onClose} width="standard" footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="primary" busy={saving || loading} onClick={() => document.querySelector<HTMLFormElement>("#department-form")?.requestSubmit()}>{mode === "create" ? "Create department" : "Save changes"}</Button></>}>
+  return <Drawer open={open} title={mode === "create" ? "Create department" : "Edit department"} description={mode === "create" ? "Set the department name and purpose. Manager assignment can be completed after creation." : "Update the department details and its eligible manager assignment."} onClose={() => { if (!saving) onClose(); }} width="standard" footer={<><Button variant="secondary" disabled={saving} onClick={onClose}>Cancel</Button><Button variant="primary" busy={saving || loading} onClick={() => document.querySelector<HTMLFormElement>("#department-form")?.requestSubmit()}>{mode === "create" ? "Create department" : "Save changes"}</Button></>}>
     {loading ? <div className="loading-state">Loading department…</div> : <form id="department-form" onSubmit={submit}>
       {error ? <div className="form-error" role="alert">{error}</div> : null}
       <section className="form-section"><h3 className="form-section-title"><Building2 size={15} /> Department details</h3><div className="form-grid department-form-grid">

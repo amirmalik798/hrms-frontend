@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { BriefcaseBusiness, Eye, Filter, Mail, MoreHorizontal, Pencil, Plus, Search, ShieldCheck, UserCheck, UserRound, UserX, Users, X } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
@@ -58,6 +58,9 @@ export function WorkforceWorkspace() {
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [managerOptions, setManagerOptions] = useState<Employee[]>([]);
   const [managerOptionsError, setManagerOptionsError] = useState("");
+  const [departmentOptionsError, setDepartmentOptionsError] = useState("");
+  const listRequestRef = useRef(0);
+  const detailRequestRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -81,6 +84,7 @@ export function WorkforceWorkspace() {
     || user.role === "DEPARTMENT_MANAGER";
 
   const load = useCallback(async (silent = false) => {
+    const requestId = ++listRequestRef.current;
     if (!silent) setLoading(true); setError("");
     try {
       const params = new URLSearchParams({ page: String(page), limit: "50", sortBy: "name", sortOrder: "asc" });
@@ -88,39 +92,49 @@ export function WorkforceWorkspace() {
       if (statusFilter !== "ALL") params.set("status", statusFilter);
       if (departmentFilter !== "ALL") departmentFilter === "UNASSIGNED" ? params.set("unassigned", "true") : params.set("departmentId", departmentFilter);
       const result = await apiRequest<DirectoryResponse>(`/employees?${params.toString()}`);
+      if (requestId !== listRequestRef.current) return;
       setRows(Array.isArray(result.employees) ? result.employees : []);
       setTotal(result.pagination?.total ?? 0);
       setTotalPages(Math.max(1, result.pagination?.totalPages ?? 1));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to load workforce records.");
-    } finally { if (!silent) setLoading(false); }
+      if (requestId === listRequestRef.current) setError(caught instanceof Error ? caught.message : "Unable to load workforce records.");
+    } finally { if (!silent && requestId === listRequestRef.current) setLoading(false); }
   }, [page, search, statusFilter, departmentFilter]);
 
   useEffect(() => { void load(); }, [load]);
   useSmartRefresh(() => load(true), !drawerMode && !statusTarget && !detailLoading && !statusSaving);
   useEffect(() => {
     let active = true;
+    setDepartmentOptionsError("");
     setManagerOptionsError("");
-    Promise.all([
-      apiRequest<{ departments?: DepartmentOption[] }>("/departments?page=1&limit=100&includeInactive=true").catch(() => null),
-      loadAllPages<Employee>(async (page) => {
-        const result = await apiRequest<DirectoryResponse>(`/employees?page=${page}&limit=100&status=ACTIVE&sortBy=name&sortOrder=asc`);
-        return { items: result.employees ?? [], totalPages: result.pagination?.totalPages };
-      }),
-    ]).then(([deptResult, people]) => {
-      if (!active) return;
-      setDepartments(deptResult?.departments ?? []);
-      setManagerOptions(people.filter((person) => ["HR_MANAGER", "DEPARTMENT_MANAGER"].includes(person.workforce_role)));
+
+    void loadAllPages<DepartmentOption>(async (page) => {
+      const result = await apiRequest<{ departments?: DepartmentOption[]; pagination?: { totalPages?: number } }>(`/departments?page=${page}&limit=100&includeInactive=true`);
+      return { items: result.departments ?? [], totalPages: result.pagination?.totalPages };
+    }).then((values) => {
+      if (active) setDepartments(values);
+    }).catch((caught) => {
+      if (active) setDepartmentOptionsError(caught instanceof Error ? caught.message : "Unable to load the complete department list.");
+    });
+
+    void loadAllPages<Employee>(async (page) => {
+      const result = await apiRequest<DirectoryResponse>(`/employees?page=${page}&limit=100&status=ACTIVE&sortBy=name&sortOrder=asc`);
+      return { items: result.employees ?? [], totalPages: result.pagination?.totalPages };
+    }).then((people) => {
+      if (active) setManagerOptions(people.filter((person) => ["HR_MANAGER", "DEPARTMENT_MANAGER"].includes(person.workforce_role)));
     }).catch((caught) => {
       if (active) setManagerOptionsError(caught instanceof Error ? caught.message : "Unable to load all eligible managers.");
     });
+
     return () => { active = false; };
   }, []);
 
   async function openDetails(id: string, mode: "details" | "edit" = "details") {
+    const requestId = ++detailRequestRef.current;
     setDrawerMode(mode); setSelectedId(id); setDetailLoading(true); setSelected(null); setError("");
     try {
       const result = await apiRequest<{ employee?: Employee }>(`/employees/${id}`);
+      if (requestId !== detailRequestRef.current) return;
       const directoryRecord = rows.find((employee) => employee.id === id);
       if (!result.employee) {
         setSelected(null);
@@ -132,8 +146,8 @@ export function WorkforceWorkspace() {
           has_pending_invitation: result.employee.has_pending_invitation ?? directoryRecord?.has_pending_invitation,
         });
       }
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load this employee."); }
-    finally { setDetailLoading(false); }
+    } catch (caught) { if (requestId === detailRequestRef.current) setError(caught instanceof Error ? caught.message : "Unable to load this employee."); }
+    finally { if (requestId === detailRequestRef.current) setDetailLoading(false); }
   }
 
   async function confirmEmploymentStatusChange() {
@@ -213,12 +227,12 @@ export function WorkforceWorkspace() {
         </div>;
       })() : null}
     </Drawer>
-    <EmployeeDrawer open={drawerMode === "create" || drawerMode === "edit"} mode={drawerMode === "edit" ? "edit" : "create"} employee={selected} loading={detailLoading} departments={departments} managers={managerOptions} managerOptionsError={managerOptionsError} onClose={() => { setDrawerMode(null); setSelectedId(null); }} onSaved={() => { setDrawerMode(null); setSelectedId(null); setNotice("Workforce record saved."); void load(); setTimeout(() => setNotice(""), 4500); }} />
+    <EmployeeDrawer open={drawerMode === "create" || drawerMode === "edit"} mode={drawerMode === "edit" ? "edit" : "create"} employee={selected} loading={detailLoading} departments={departments} managers={managerOptions} departmentOptionsError={departmentOptionsError} managerOptionsError={managerOptionsError} onClose={() => { setDrawerMode(null); setSelectedId(null); }} onSaved={() => { setDrawerMode(null); setSelectedId(null); setNotice("Workforce record saved."); void load(); setTimeout(() => setNotice(""), 4500); }} />
     <EmployeeDetailsDrawer open={drawerMode === "details"} employee={selected} loading={detailLoading} error={error} canInvite={canInvite} onClose={() => { setDrawerMode(null); setSelectedId(null); setError(""); }} onInviteComplete={() => { setNotice("Invitation sent successfully."); void load(); setTimeout(() => setNotice(""), 4500); }} onEdit={canEdit ? () => { if (selectedId) void openDetails(selectedId, "edit"); } : undefined} />
   </>;
 }
 
-function EmployeeDrawer({ open, mode, employee, loading, departments, managers, managerOptionsError, onClose, onSaved }: { open: boolean; mode: "create" | "edit"; employee: Employee | null; loading: boolean; departments: DepartmentOption[]; managers: Employee[]; managerOptionsError: string; onClose: () => void; onSaved: () => void }) {
+function EmployeeDrawer({ open, mode, employee, loading, departments, managers, departmentOptionsError, managerOptionsError, onClose, onSaved }: { open: boolean; mode: "create" | "edit"; employee: Employee | null; loading: boolean; departments: DepartmentOption[]; managers: Employee[]; departmentOptionsError: string; managerOptionsError: string; onClose: () => void; onSaved: () => void }) {
   const { user } = useWorkspace();
   const [form, setForm] = useState<EmployeeForm>(blankForm);
   const [saving, setSaving] = useState(false);
@@ -257,7 +271,7 @@ function EmployeeDrawer({ open, mode, employee, loading, departments, managers, 
   }
 
   const allowRoleChoice = mode === "create";
-  return <Drawer open={open} title={mode === "create" ? "Create workforce member" : "Edit workforce member"} description={mode === "create" ? "Create an inactive workforce profile. Account activation happens through the existing invitation acceptance process." : "Update this person’s work and contact details. Server-side role and field permissions remain authoritative."} onClose={onClose} footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="primary" busy={saving || loading} onClick={() => document.querySelector<HTMLFormElement>("#employee-profile-form")?.requestSubmit()}>{mode === "create" ? "Create profile" : "Save changes"}</Button></>}>
+  return <Drawer open={open} title={mode === "create" ? "Create workforce member" : "Edit workforce member"} description={mode === "create" ? "Create an inactive workforce profile. Account activation happens through the existing invitation acceptance process." : "Update this person’s work and contact details. Server-side role and field permissions remain authoritative."} onClose={() => { if (!saving) onClose(); }} footer={<><Button variant="secondary" disabled={saving} onClick={onClose}>Cancel</Button><Button variant="primary" busy={saving || loading} onClick={() => document.querySelector<HTMLFormElement>("#employee-profile-form")?.requestSubmit()}>{mode === "create" ? "Create profile" : "Save changes"}</Button></>}>
     {loading ? <div className="loading-state">Loading workforce profile…</div> : <form id="employee-profile-form" onSubmit={submit}>
       {error ? <div className="form-error" role="alert">{error}</div> : null}
       <section className="form-section"><h3 className="form-section-title"><UserRound size={15} /> Personal & employment</h3><div className="form-grid">
@@ -267,8 +281,8 @@ function EmployeeDrawer({ open, mode, employee, loading, departments, managers, 
         <Field label="Last name"><TextInput required minLength={2} maxLength={100} value={form.last_name} onChange={(e) => update("last_name", e.target.value)} /></Field>
         <Field label="Job title"><TextInput required maxLength={100} value={form.designation} onChange={(e) => update("designation", e.target.value)} placeholder="e.g. Finance Officer" /></Field>
         <Field label="Joining date"><TextInput required type="date" value={form.joining_date} onChange={(e) => update("joining_date", e.target.value)} /></Field>
-        <Field label="Department"><SelectInput value={form.department_id} onChange={(e) => update("department_id", e.target.value)}><option value="">No department assigned</option>{departments.filter((d) => d.status !== "INACTIVE").map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</SelectInput></Field>
-        <Field label="Reporting manager" hint={managerOptionsError || "All active HR Managers and Department Managers are listed."}><SelectInput value={form.manager_id} onChange={(e) => update("manager_id", e.target.value)}><option value="">No manager assigned</option>{managers.filter((m) => m.id !== employee?.id).map((m) => <option key={m.id} value={m.id}>{m.first_name} {m.last_name} · {roleDisplay[m.workforce_role] ?? humanize(m.workforce_role)}</option>)}</SelectInput></Field>
+        <Field label="Department" hint={departmentOptionsError || "All organization departments are listed."}><SelectInput disabled={Boolean(departmentOptionsError) || saving} value={form.department_id} onChange={(e) => update("department_id", e.target.value)}><option value="">No department assigned</option>{departments.filter((d) => d.status !== "INACTIVE").map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</SelectInput></Field>
+        <Field label="Reporting manager" hint={managerOptionsError || "All active HR Managers and Department Managers are listed."}><SelectInput disabled={Boolean(managerOptionsError) || saving} value={form.manager_id} onChange={(e) => update("manager_id", e.target.value)}><option value="">No manager assigned</option>{managers.filter((m) => m.id !== employee?.id).map((m) => <option key={m.id} value={m.id}>{m.first_name} {m.last_name} · {roleDisplay[m.workforce_role] ?? humanize(m.workforce_role)}</option>)}</SelectInput></Field>
       </div></section>
       <section className="form-section"><h3 className="form-section-title"><Mail size={15} /> Contact details</h3><div className="form-grid">
         <Field label="Work email"><TextInput type="email" required maxLength={254} value={form.email} onChange={(e) => update("email", e.target.value)} placeholder="person@company.com" /></Field>
