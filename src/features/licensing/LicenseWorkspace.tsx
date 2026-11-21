@@ -65,6 +65,11 @@ export function LicenseWorkspace() {
   const [paymentCurrency, setPaymentCurrency] = useState(currencyCode || "USD");
   const [reference, setReference] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofTarget, setProofTarget] = useState<PaymentRecord | null>(null);
+  const [proofUrl, setProofUrl] = useState("");
+  const [proofLoading, setProofLoading] = useState(false);
+  const [proofError, setProofError] = useState("");
+  const proofRequestRef = useRef(0);
 
   const load = useCallback(async (silent = false) => {
     const requestId = ++loadSequenceRef.current;
@@ -80,11 +85,62 @@ export function LicenseWorkspace() {
       if (!silent && requestId === loadSequenceRef.current) setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!proofUrl) return;
+    return () => URL.revokeObjectURL(proofUrl);
+  }, [proofUrl]);
+
   useEffect(() => { void load(); }, [load]);
-  useSmartRefresh(() => load(true), !formOpen && !confirmOpen && !submitting);
+  useSmartRefresh(() => load(true), !formOpen && !confirmOpen && !proofTarget && !submitting);
   useEffect(() => { if (currencyCode) setPaymentCurrency(currencyCode.toUpperCase()); }, [currencyCode]);
 
   const pending = payments.some((payment) => payment.status === "PENDING_REVIEW");
+
+  async function viewPaymentProof(payment: PaymentRecord) {
+    const requestId = ++proofRequestRef.current;
+    setProofTarget(payment);
+    setProofUrl("");
+    setProofError("");
+    setProofLoading(true);
+
+    try {
+      const response = await fetch(
+        `/api/backend/payment-submissions/${encodeURIComponent(payment.id)}/proof`,
+        { credentials: "same-origin", cache: "no-store" },
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { message?: string } | null;
+        throw new Error(payload?.message || `Unable to retrieve proof (HTTP ${response.status}).`);
+      }
+
+      const mimeType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+      if (!["image/jpeg", "image/png", "image/webp"].includes(mimeType)) {
+        throw new Error("The server did not return a supported payment-proof image.");
+      }
+
+      const blob = await response.blob();
+      if (!blob.size || blob.size > 5 * 1024 * 1024) {
+        throw new Error("The payment-proof image is empty or exceeds the supported 5 MB limit.");
+      }
+      if (requestId !== proofRequestRef.current) return;
+      setProofUrl(URL.createObjectURL(blob));
+    } catch (caught) {
+      if (requestId === proofRequestRef.current) {
+        setProofError(caught instanceof Error ? caught.message : "Unable to retrieve this payment proof.");
+      }
+    } finally {
+      if (requestId === proofRequestRef.current) setProofLoading(false);
+    }
+  }
+
+  function closePaymentProof() {
+    proofRequestRef.current += 1;
+    setProofTarget(null);
+    setProofUrl("");
+    setProofError("");
+    setProofLoading(false);
+  }
   const canSubmit = Boolean(proofFile) && Number(paymentAmount) > 0 && /^[A-Z]{3}$/.test(paymentCurrency) && paymentAmount.length <= 16 && reference.length <= 120;
 
   async function submitProof() {
@@ -125,9 +181,34 @@ export function LicenseWorkspace() {
       </Panel>
       <Panel>
         <div className="panel-heading"><div><h2>Payment history</h2><p>Up to {50} recent submissions, including review outcomes.</p></div><span className="metric-icon"><History size={16} /></span></div>
-        {payments.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Submitted</th><th>Amount</th><th>Reference</th><th>Proof</th><th>Status</th><th>Review note</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.id}><td>{dateTime(payment.createdAt, timeZone)}</td><td><span className="table-primary">{amount(payment.amount, payment.currencyCode)}</span></td><td>{payment.transactionReference || "—"}</td><td>{payment.proofImageFilename || payment.proofImageMimeType}</td><td><StatusBadge value={payment.status} /></td><td>{payment.rejectionReason || (payment.reviewedAt ? `Reviewed ${dateTime(payment.reviewedAt, timeZone)}` : "Awaiting review")}</td></tr>)}</tbody></table></div> : <div className="empty-state"><div className="state-icon"><History size={18} /></div><h3>No payment submissions yet</h3><p>Once you submit payment proof, its verification history will appear here.</p></div>}
+        {payments.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Submitted</th><th>Amount</th><th>Reference</th><th>Proof</th><th>Status</th><th>Review note</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.id}><td>{dateTime(payment.createdAt, timeZone)}</td><td><span className="table-primary">{amount(payment.amount, payment.currencyCode)}</span></td><td>{payment.transactionReference || "—"}</td><td>
+        <div className="payment-proof-history-cell">
+          <Button size="sm" variant="ghost" leading={<FileImage size={13} />} onClick={() => void viewPaymentProof(payment)}>View proof</Button>
+          <span>{payment.proofImageFilename || payment.proofImageMimeType}</span>
+        </div>
+      </td><td><StatusBadge value={payment.status} /></td><td>{payment.rejectionReason || (payment.reviewedAt ? `Reviewed ${dateTime(payment.reviewedAt, timeZone)}` : "Awaiting review")}</td></tr>)}</tbody></table></div> : <div className="empty-state"><div className="state-icon"><History size={18} /></div><h3>No payment submissions yet</h3><p>Once you submit payment proof, its verification history will appear here.</p></div>}
       </Panel>
     </> : null}
+
+    <Drawer open={Boolean(proofTarget)} title="Submitted payment proof" description={proofTarget ? `${amount(proofTarget.amount, proofTarget.currencyCode)} · Submitted ${dateTime(proofTarget.createdAt, timeZone)}` : "Private payment receipt image."} onClose={closePaymentProof} width="wide">
+      {proofTarget ? <div className="payment-proof-viewer">
+        <section className="payment-proof-viewer-summary" aria-label="Payment proof details">
+          <div><span>Submission status</span><StatusBadge value={proofTarget.status} /></div>
+          <div><span>Payment amount</span><strong>{amount(proofTarget.amount, proofTarget.currencyCode)}</strong></div>
+          <div><span>Transaction reference</span><strong>{proofTarget.transactionReference || "Not provided"}</strong></div>
+          <div><span>Submitted</span><strong>{dateTime(proofTarget.createdAt, timeZone)}</strong></div>
+        </section>
+        {proofLoading ? <div className="payment-proof-loading" role="status">Loading private receipt image…</div> : null}
+        {proofError ? <div className="form-error" role="alert">{proofError}</div> : null}
+        {proofUrl ? <div className="payment-proof-image-frame">
+          <img src={proofUrl} alt={proofTarget.proofImageFilename ? `Payment receipt: ${proofTarget.proofImageFilename}` : "Submitted payment receipt"} className="payment-proof-image" />
+          <div className="payment-proof-image-footer">
+            <span><FileImage size={14} /> {proofTarget.proofImageFilename || proofTarget.proofImageMimeType}</span>
+            <a href={proofUrl} target="_blank" rel="noreferrer">Open image in new tab</a>
+          </div>
+        </div> : null}
+      </div> : null}
+    </Drawer>
 
     <Drawer open={formOpen} title="Submit payment proof" description="Provide the amount, currency, optional transaction reference, and one image of your payment receipt. The proof is stored privately for review." onClose={() => { if (!submitting) setFormOpen(false); }} footer={<><Button variant="secondary" disabled={submitting} onClick={() => setFormOpen(false)}>Cancel</Button><Button variant="primary" disabled={!canSubmit || pending} onClick={() => setConfirmOpen(true)}>Review submission</Button></>}>
       {error ? <div className="form-error" role="alert" style={{ marginBottom: 12 }}>{error}</div> : null}
