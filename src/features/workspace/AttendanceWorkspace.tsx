@@ -10,6 +10,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest } from "@/lib/api-client";
 import { formatDate, getLocalISODate, humanize } from "@/lib/format";
+import { useAttendanceRefresh } from "@/lib/attendance-events";
 
 interface AttendanceEntry {
   employeeId: string; employeeCode: string; firstName: string; lastName: string; departmentName: string;
@@ -135,6 +136,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
   }, [appliedFromDate, appliedToDate, selfOnly]);
 
   useEffect(() => { if (rangeReady) void load(); }, [load, rangeReady]);
+  useAttendanceRefresh(() => { void load(true); }, rangeReady);
 
   function applyDateRange() {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
