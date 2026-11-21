@@ -91,9 +91,9 @@ export function SupportWorkspace() {
     if (!selectedId && items.length && !compose) setSelectedId(items[0].id);
     if (selectedId && items.length && !items.some((item) => item.id === selectedId)) setSelectedId("");
   }, [items, selectedId, compose]);
-  useSmartRefresh(() => {
-    void loadInbox(true);
-    if (selectedId) void loadThread(selectedId, true);
+  useSmartRefresh(async () => {
+    await loadInbox(true);
+    if (selectedId) await loadThread(selectedId, true);
   }, !compose && !busy);
 
   const visibleItems = useMemo(() => items, [items]);
