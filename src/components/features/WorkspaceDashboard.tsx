@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Activity, AlertCircle, ArrowRight, ArrowUpRight, Building2, CalendarClock, CheckCircle2, Clock3, FileClock, Mail, ShieldCheck, Users, Wallet } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
@@ -151,7 +151,7 @@ export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
     {partialWarning ? <div className="info-callout" role="status" style={{ marginBottom: 18 }}><AlertCircle size={15} />{partialWarning}</div> : null}
 
     <div className="page-grid grid-4" style={{ marginBottom: 18 }}>
-      {metrics.map((metric) => { const Icon = metric.icon; return <Panel key={metric.label} className="metric-card"><div className="metric-label"><span>{metric.label}</span><span className="metric-icon"><Icon size={16} /></span></div><div className="metric-value">{loading ? <span className="skeleton" style={{ display: "inline-block", width: 76, height: 30 }} /> : typeof metric.value === "number" ? formatNumber(metric.value) : metric.value ?? "—"}</div><div className="metric-foot">{metric.note}</div></Panel>; })}
+      {metrics.map((metric) => { const Icon = metric.icon; return <Panel key={metric.label} className="metric-card"><div className="metric-label"><span>{metric.label}</span><span className="metric-icon"><Icon size={16} /></span></div><div className="metric-value">{loading ? <span className="skeleton" style={{ display: "inline-block", width: 76, height: 30 }} /> : typeof metric.value === "number" ? formatNumber(metric.value) : (metric.value == null ? "—" : metric.value as ReactNode)}</div><div className="metric-foot">{metric.note}</div></Panel>; })}
     </div>
 
     {role === "EMPLOYEE" ? <EmployeeHomeContent clockStatus={data?.clockStatus} events={data?.events ?? []} timeZone={timeZone} /> : <div className="page-grid grid-2">
