@@ -3,6 +3,11 @@ import type { NextConfig } from "next";
 const backendOrigin = (process.env.BACKEND_ORIGIN ?? "http://localhost:3000").replace(/\/$/, "");
 
 const nextConfig: NextConfig = {
+  experimental: {
+    // Next.js 16.4.0's CLI checker can include stale .next/dev route validators.
+    // The TypeScript API checker filters development-only route types during builds.
+    useTypeScriptCli: false,
+  },
   poweredByHeader: false,
   async rewrites() {
     return [{ source: "/api/backend/:path*", destination: `${backendOrigin}/api/:path*` }];
