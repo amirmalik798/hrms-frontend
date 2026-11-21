@@ -96,6 +96,9 @@ export function PayrollWorkspace() {
   const paidTotal = payments.filter((item) => item.status === "PAID").reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
   const dueTotal = payments.filter((item) => item.status === "UNPAID").reduce((sum, item) => sum + Number(item.calculatedAmount ?? 0), 0);
   const payableCount = payments.filter((item) => item.status === "UNPAID" || item.status === "PAID").length;
+  const summaryCurrencyCode = user.role === "EMPLOYEE"
+    ? payments.find((item) => typeof item.currencyCode === "string" && item.currencyCode.trim())?.currencyCode ?? currencyCode
+    : currencyCode;
 
   function openPayment(item: Payment) {
     setSelected(item);
@@ -242,8 +245,8 @@ export function PayrollWorkspace() {
     {error ? <div role="alert" className="form-error" style={{ marginBottom: 14 }}>{error}</div> : null}
     {notice ? <div role="status" className="success-callout" style={{ marginBottom: 14 }}><CheckCircle2 size={15} />{notice}</div> : null}
     <div className="payroll-summary-grid" style={{ marginBottom: 16 }}>
-      <Panel className="metric-card"><div className="metric-icon"><Wallet size={17} /></div><div className="metric-label">Paid this month</div><div className="metric-value">{formatMoney(paidTotal, currencyCode)}</div><div className="metric-foot">{payments.filter((item) => item.status === "PAID").length} recorded payments · {month}</div></Panel>
-      <Panel className="metric-card"><div className="metric-icon"><CircleDollarSign size={17} /></div><div className="metric-label">Outstanding amount</div><div className="metric-value">{formatMoney(dueTotal, currencyCode)}</div><div className="metric-foot">{payments.filter((item) => item.status === "UNPAID").length} awaiting payment</div></Panel>
+      <Panel className="metric-card"><div className="metric-icon"><Wallet size={17} /></div><div className="metric-label">Paid this month</div><div className="metric-value">{formatMoney(paidTotal, summaryCurrencyCode)}</div><div className="metric-foot">{payments.filter((item) => item.status === "PAID").length} recorded payments · {month}</div></Panel>
+      <Panel className="metric-card"><div className="metric-icon"><CircleDollarSign size={17} /></div><div className="metric-label">Outstanding amount</div><div className="metric-value">{formatMoney(dueTotal, summaryCurrencyCode)}</div><div className="metric-foot">{payments.filter((item) => item.status === "UNPAID").length} awaiting payment</div></Panel>
       <Panel className="metric-card"><div className="metric-icon"><AlertCircle size={17} /></div><div className="metric-label">Needs attention</div><div className="metric-value">{payments.filter((item) => ["RATE_REQUIRED", "CURRENCY_MISMATCH", "NO_RECORDED_HOURS"].includes(item.status)).length}</div><div className="metric-foot">Rate, currency, or payable-hours issue</div></Panel>
     </div>
     <Panel>
