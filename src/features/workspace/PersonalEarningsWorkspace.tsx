@@ -18,6 +18,7 @@ interface EarningsDay {
   payableMinutes: number; clockIn: string | null; clockOut: string | null; workedMinutes: number;
   regularWorkedMinutes: number; potentialOvertimeMinutes: number; approvedOvertimeMinutes: number;
   payableOvertimeMinutes: number; excessUnapprovedOvertimeMinutes: number; calculationStatus: string;
+  hourlyRate: number | null; overtimeRate: number | null;
   regularPay: number | null; overtimePay: number | null; estimatedPay: number | null;
   currencyCode: string | null; excessOvertimeReviewStatus: string | null;
 }
@@ -147,16 +148,16 @@ export function PersonalEarningsWorkspace() {
       {data?.disclaimer ? <div className="info-callout" style={{ marginBottom: 14 }}>{data.disclaimer}</div> : null}
     </> : null}
     <Panel>
-      <div className="panel-heading"><div><h2>Daily earnings breakdown</h2><p>Backend-calculated figures for your own attendance record.</p></div><span className="date-chip">{loading ? "Loading…" : `${days.length} days`}</span></div>
+      <div className="panel-heading"><div><h2>Daily earnings breakdown</h2><p>See each day’s calculated earnings and the hourly and overtime rates effective on that date.</p></div><span className="date-chip">{loading ? "Loading…" : `${days.length} days`}</span></div>
       {loading && !days.length ? <div className="loading-state">Calculating your earnings…</div> : null}
       {!loading && !error && !days.length ? <div className="empty-state"><div className="state-icon"><Wallet size={18} /></div><h3>No earnings details for this period</h3><p>Your daily schedule and attendance details will appear here when available.</p></div> : null}
-      {days.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Work date</th><th>Schedule</th><th>Clock in / out</th><th>Worked</th><th>Approved OT</th><th>Estimated amount</th><th>Status</th></tr></thead><tbody>{days.map((day) => <tr key={day.workDate}>
+      {days.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Work date</th><th>Schedule</th><th>Clock in / out</th><th>Worked</th><th>Approved OT</th><th>Daily earnings</th><th>Status</th></tr></thead><tbody>{days.map((day) => <tr key={day.workDate}>
         <td><span className="table-primary">{formatDate(day.workDate, zone)}</span></td>
         <td>{day.scheduleName || "No shift"}{day.isPaidLeave ? <span className="table-secondary">Paid leave</span> : day.isPaidHoliday ? <span className="table-secondary">Paid holiday</span> : null}</td>
         <td><span className="table-primary">{formatTime(day.clockIn, zone)}</span><span className="table-secondary">{formatTime(day.clockOut, zone)}</span></td>
         <td><span className="table-primary">{duration(day.workedMinutes)}</span><span className="table-secondary">{duration(day.payableMinutes)} payable</span></td>
         <td>{duration(day.payableOvertimeMinutes)}{day.excessUnapprovedOvertimeMinutes > 0 ? <span className="table-secondary">{duration(day.excessUnapprovedOvertimeMinutes)} unapproved</span> : null}</td>
-        <td><span className="table-primary">{formatMoney(day.estimatedPay, day.currencyCode || currency)}</span>{day.regularPay !== null || day.overtimePay !== null ? <span className="table-secondary">Regular {formatMoney(day.regularPay, day.currencyCode || currency)} · OT {formatMoney(day.overtimePay, day.currencyCode || currency)}</span> : null}</td>
+        <td><span className="table-primary">{formatMoney(day.estimatedPay, day.currencyCode || currency)}</span><span className="table-secondary">Regular {formatMoney(day.regularPay, day.currencyCode || currency)} · OT {formatMoney(day.overtimePay, day.currencyCode || currency)}</span><span className="table-secondary">Hourly rate: {day.hourlyRate === null ? "Not configured" : `${formatMoney(day.hourlyRate, day.currencyCode || currency)} / hour`}</span><span className="table-secondary">Overtime rate: {day.overtimeRate === null ? "Not configured" : `${formatMoney(day.overtimeRate, day.currencyCode || currency)} / hour`}</span></td>
         <td><StatusBadge value={day.calculationStatus || (day.isPaidLeave ? "PAID_LEAVE" : day.isPaidHoliday ? "PAID_HOLIDAY" : "NO_DATA")} />{day.excessOvertimeReviewStatus ? <span className="table-secondary">{humanize(day.excessOvertimeReviewStatus)}</span> : null}</td>
       </tr>)}</tbody></table></div> : null}
       <div className="table-footer"><span>Rates and payable time are provided by the backend.</span><span>Estimates may change after approved corrections or payroll review.</span></div>
