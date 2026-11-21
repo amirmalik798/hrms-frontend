@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { ArrowUpDown, BriefcaseBusiness, Eye, Filter, Mail, MoreHorizontal, Pencil, Plus, Search, ShieldCheck, UserCheck, UserRound, UserX, Users, X } from "lucide-react";
+import { BriefcaseBusiness, Eye, Filter, Mail, MoreHorizontal, Pencil, Plus, Search, ShieldCheck, UserCheck, UserRound, UserX, Users, X } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
@@ -12,6 +12,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { apiRequest, ApiError, pickArray, stringValue } from "@/lib/api-client";
 import { formatDate, humanize } from "@/lib/format";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 
 interface Employee {
   id: string;
@@ -75,8 +76,8 @@ export function WorkforceWorkspace() {
     || (user.role === "HR_MANAGER" && user.permissions.includes("employee.update") && user.permissions.includes("employee.status.change"))
     || user.role === "DEPARTMENT_MANAGER";
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true); setError("");
     try {
       const params = new URLSearchParams({ page: String(page), limit: "50", sortBy: "name", sortOrder: "asc" });
       if (search.trim()) params.set("q", search.trim());
@@ -88,10 +89,11 @@ export function WorkforceWorkspace() {
       setTotalPages(Math.max(1, result.pagination?.totalPages ?? 1));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to load workforce records.");
-    } finally { setLoading(false); }
+    } finally { if (!silent) setLoading(false); }
   }, [page, search, statusFilter, departmentFilter]);
 
   useEffect(() => { void load(); }, [load]);
+  useSmartRefresh(() => load(true), !drawerMode && !statusTarget && !detailLoading && !statusSaving);
   useEffect(() => {
     let active = true;
     Promise.all([
@@ -142,7 +144,7 @@ export function WorkforceWorkspace() {
           <select className="filter-select" aria-label="Filter by employment status" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}><option value="ALL">All statuses</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option><option value="FORMER">Former</option></select>
           {user.role !== "DEPARTMENT_MANAGER" ? <select className="filter-select" aria-label="Filter by department" value={departmentFilter} onChange={(event) => { setDepartmentFilter(event.target.value); setPage(1); }}><option value="ALL">All departments</option><option value="UNASSIGNED">Unassigned</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select> : null}
         </div>
-        <div className="toolbar-right"><span style={{ color: "var(--muted)", fontSize: 11 }}>{loading ? "Loading…" : `${total} people`}</span><Button size="sm" variant="ghost" leading={<RefreshIcon />} onClick={() => void load()}>Refresh</Button></div>
+        <div className="toolbar-right"><span style={{ color: "var(--muted)", fontSize: 11 }}>{loading ? "Loading…" : `${total} people`}</span></div>
       </div>
       {error && !rows.length ? <div className="error-state"><div className="state-icon"><X size={18} /></div><h3>Workforce could not be loaded</h3><p>{error}</p><Button variant="secondary" onClick={() => void load()}>Retry</Button></div> : null}
       {loading && !rows.length ? <TableSkeleton /> : !rows.length && !error ? <div className="empty-state"><div className="state-icon"><Users size={19} /></div><h3>{search || statusFilter !== "ALL" || departmentFilter !== "ALL" ? "No matching people" : "No workforce records yet"}</h3><p>{search || statusFilter !== "ALL" || departmentFilter !== "ALL" ? "Try adjusting your search or filters." : "Workforce profiles will appear here after they have been created."}</p>{canCreate ? <Button size="sm" variant="primary" leading={<Plus size={14} />} onClick={() => setDrawerMode("create")}>Add workforce member</Button> : null}</div> : null}
@@ -264,4 +266,3 @@ function EmployeeDetailsDrawer({ open, employee, loading, error, canInvite, onCl
 function DetailSection({ title, children }: { title: string; children: ReactNode }) { return <section className="form-section"><h3 className="form-section-title">{title}</h3><div className="form-grid">{children}</div></section>; }
 function Detail({ label, value, children }: { label: string; value?: string | null; children?: ReactNode }) { return <div><p className="field-hint" style={{ margin: 0 }}>{label}</p><div style={{ marginTop: 4, color: "var(--text-strong)", fontSize: 12, fontWeight: 600 }}>{children ?? value ?? "—"}</div></div>; }
 function TableSkeleton() { return <div style={{ padding: 19, display: "grid", gap: 15 }}>{Array.from({ length: 5 }).map((_, i) => <div key={i} className="skeleton" style={{ height: 38 }} />)}</div>; }
-function RefreshIcon() { return <ArrowUpDown size={13} />; }

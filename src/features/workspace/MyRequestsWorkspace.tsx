@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { CalendarClock, Clock3, FileClock, Plus, RefreshCw } from "lucide-react";
+import { CalendarClock, Clock3, FileClock, Plus } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { useAttendanceRefresh } from "@/lib/attendance-events";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/ui/Field";
@@ -39,8 +40,8 @@ export function MyRequestsWorkspace() {
   const [overtimeMinutes, setOvertimeMinutes] = useState("60");
   const [overtimeReason, setOvertimeReason] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true); setError("");
     try {
       const suffix = user.role === "HR_MANAGER" ? "?scope=self" : "";
       const [correctionResult, overtimeResult, calendarResult] = await Promise.all([
@@ -56,11 +57,12 @@ export function MyRequestsWorkspace() {
       setRecentEvents(events.slice(0, 100));
       if (!eventId && events[0]) { setEventId(events[0].id); setEventType(events[0].eventType); }
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load your requests."); }
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   }, [user.role, user.employeeId, workDate, eventId]);
 
   useEffect(() => { void load(); }, [load]);
-  useAttendanceRefresh(() => { void load(); });
+  useSmartRefresh(() => load(true), !drawer && !saving);
+  useAttendanceRefresh(() => { void load(true); });
 
   const pendingCount = useMemo(() => [...corrections, ...overtime].filter((request) => request.status === "PENDING").length, [corrections, overtime]);
   const selectedEvent = recentEvents.find((event) => event.id === eventId);
@@ -95,7 +97,7 @@ export function MyRequestsWorkspace() {
   const displayedOvertime = overtime.filter((item) => tab === "all" || tab === "overtime");
 
   return <>
-    <PageHeader eyebrow="My workspace" title="My requests" description="Submit an attendance correction or request overtime in advance, then follow the decision here." action={<div style={{ display: "flex", gap: 8 }}><Button size="sm" variant="secondary" leading={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>Refresh</Button><Button size="sm" variant="primary" leading={<Plus size={14} />} onClick={() => { setError(""); setDrawer("correction"); }}>Attendance correction</Button><Button size="sm" variant="secondary" leading={<Clock3 size={14} />} onClick={() => { setError(""); setDrawer("overtime"); }}>Request overtime</Button></div>} />
+    <PageHeader eyebrow="My workspace" title="My requests" description="Submit an attendance correction or request overtime in advance, then follow the decision here." action={<div style={{ display: "flex", gap: 8 }}><Button size="sm" variant="primary" leading={<Plus size={14} />} onClick={() => { setError(""); setDrawer("correction"); }}>Attendance correction</Button><Button size="sm" variant="secondary" leading={<Clock3 size={14} />} onClick={() => { setError(""); setDrawer("overtime"); }}>Request overtime</Button></div>} />
     {notice ? <div className="success-callout" role="status" style={{ marginBottom: 12 }}>{notice}</div> : null}
     {error && !drawer ? <div className="form-error" role="alert" style={{ marginBottom: 12 }}>{error}</div> : null}
     <div className="request-summary-row"><Panel className="request-summary"><span className="metric-icon"><FileClock size={16} /></span><strong>{pendingCount}</strong><span>Awaiting review</span></Panel><Panel className="request-summary"><span className="metric-icon"><CalendarClock size={16} /></span><strong>{corrections.length}</strong><span>Attendance corrections</span></Panel><Panel className="request-summary"><span className="metric-icon"><Clock3 size={16} /></span><strong>{overtime.length}</strong><span>Overtime requests</span></Panel></div>

@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Network, RefreshCw, Search, Users, UserRound, Building2, ShieldCheck } from "lucide-react";
+import { Network, Search, Users, UserRound, Building2, ShieldCheck } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { apiRequest } from "@/lib/api-client";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 import { humanize } from "@/lib/format";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 
@@ -39,8 +40,8 @@ export function OrganizationChartWorkspace() {
   const [query, setQuery] = useState("");
   const [truncated, setTruncated] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true); setError(""); setTruncated(false);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true); setError(""); if (!silent) setTruncated(false);
     try {
       if (user.role === "HR_MANAGER") {
         const result = await apiRequest<{ employees?: PersonNode[] }>("/hr-manager/organization-chart");
@@ -61,10 +62,11 @@ export function OrganizationChartWorkspace() {
         throw new Error("Organization chart access is not available for this role.");
       }
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load the organization chart."); }
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   }, [user.role]);
 
   useEffect(() => { void load(); }, [load]);
+  useSmartRefresh(() => load(true));
 
   const byId = useMemo(() => new Map(people.map((person) => [person.id, person])), [people]);
   const children = useMemo(() => {
@@ -114,13 +116,13 @@ export function OrganizationChartWorkspace() {
   }
 
   return <>
-    <PageHeader eyebrow="People" title="Organization chart" description="Explore who reports to whom, how teams are arranged, and where a reporting relationship is missing." action={<Button variant="secondary" leading={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>Refresh</Button>} />
+    <PageHeader eyebrow="People" title="Organization chart" description="Explore who reports to whom, how teams are arranged, and where a reporting relationship is missing." />
     <div className="metric-grid metric-grid-3" style={{ marginBottom: 16 }}>
       <Panel className="metric-card"><span className="metric-icon"><Users size={16} /></span><strong className="metric-value">{people.length.toLocaleString()}</strong><span className="metric-label">Workforce records</span></Panel>
       <Panel className="metric-card"><span className="metric-icon"><Network size={16} /></span><strong className="metric-value">{leaderCount.toLocaleString()}</strong><span className="metric-label">Managers</span></Panel>
       <Panel className="metric-card"><span className="metric-icon"><Building2 size={16} /></span><strong className="metric-value">{unassignedCount.toLocaleString()}</strong><span className="metric-label">Employees without a department</span></Panel>
     </div>
-    {error ? <div className="form-error" role="alert" style={{ marginBottom: 14 }}>{error} <button className="button button-sm button-ghost" onClick={() => void load()}>Try again</button></div> : null}
+    {error ? <div className="form-error" role="alert" style={{ marginBottom: 14 }}>{error} The organization chart will retry automatically.</div> : null}
     {truncated ? <div className="form-note" style={{ marginBottom: 14 }}>The organization has more than 10,000 records. This chart currently shows the first 10,000 records; use Workforce to search the complete directory.</div> : null}
     <Panel>
       <div className="toolbar"><div className="toolbar-left"><label className="search-field"><Search size={14} /><input aria-label="Search organization chart" placeholder="Find a person, role, or department…" value={query} onChange={(event) => setQuery(event.target.value)} /></label></div><span style={{ color: "var(--muted)", fontSize: 11 }}>{loading ? "Loading structure…" : `${people.length.toLocaleString()} people · ${activeCount.toLocaleString()} active`}</span></div>
