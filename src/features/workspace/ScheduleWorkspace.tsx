@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { apiRequest } from "@/lib/api-client";
-import { formatDate, humanize, getLocalISODate } from "@/lib/format";
+import { formatDate, getISODateInTimeZone, humanize } from "@/lib/format";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { useSmartRefresh } from "@/lib/smart-refresh";
 import { loadAllPages } from "@/lib/paginated-data";
@@ -35,6 +35,7 @@ function formatShiftTime(value: string) {
 
 export function ScheduleWorkspace() {
   const { user, workDate, timeZone } = useWorkspace();
+  const organizationToday = workDate || getISODateInTimeZone(timeZone);
   const canManage = user.role === "ORGANIZATION_ADMIN" || user.role === "HR_MANAGER";
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -52,7 +53,7 @@ export function ScheduleWorkspace() {
   const [days, setDays] = useState<ScheduleDay[]>(defaultDays);
   const [personId, setPersonId] = useState("");
   const [scheduleId, setScheduleId] = useState("");
-  const [effectiveFrom, setEffectiveFrom] = useState(workDate || getLocalISODate());
+  const [effectiveFrom, setEffectiveFrom] = useState(organizationToday);
   const [effectiveTo, setEffectiveTo] = useState("");
   const [statusConfirm, setStatusConfirm] = useState<Schedule | null>(null);
 
@@ -85,7 +86,7 @@ export function ScheduleWorkspace() {
 
   useEffect(() => { void load(); }, [load]);
   useSmartRefresh(() => load(true), !scheduleDrawer && !assignmentDrawer && !statusConfirm && !saving);
-  useEffect(() => { if (workDate && effectiveFrom === getLocalISODate()) setEffectiveFrom(workDate); }, [workDate, effectiveFrom]);
+  useEffect(() => { if (effectiveFrom === getISODateInTimeZone(timeZone)) setEffectiveFrom(organizationToday); }, [workDate, effectiveFrom, organizationToday, timeZone]);
   const activeSchedules = useMemo(() => schedules.filter((item) => item.status === "ACTIVE"), [schedules]);
   const normalizedSearch = search.trim().toLocaleLowerCase();
   const visibleAssignments = useMemo(() => assignments.filter((assignment) =>

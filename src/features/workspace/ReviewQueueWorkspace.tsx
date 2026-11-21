@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { AlertCircle, CheckCircle2, Clock3, FileClock, ShieldAlert, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest, pickArray, stringValue } from "@/lib/api-client";
-import { formatDate, humanize, getLocalISODate } from "@/lib/format";
+import { formatDate, getISODateInTimeZone, humanize } from "@/lib/format";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { useAttendanceRefresh } from "@/lib/attendance-events";
 import { useSmartRefresh } from "@/lib/smart-refresh";
@@ -57,7 +57,7 @@ function dateOffset(date: string, amount: number) {
 
 export function ReviewQueueWorkspace() {
   const { user, workDate, timeZone } = useWorkspace();
-  const authoritativeDate = workDate || getLocalISODate();
+  const authoritativeDate = workDate || getISODateInTimeZone(timeZone);
   const excessFromDate = dateOffset(authoritativeDate, -30);
   const excessToDate = dateOffset(authoritativeDate, 30);
   const available = availableQueueTypes;
@@ -72,8 +72,11 @@ export function ReviewQueueWorkspace() {
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState("");
+  const loadSequenceRef = useRef(0);
+  const itemsRef = useRef(items);
 
   const load = useCallback(async (silent = false) => {
+    const requestId = ++loadSequenceRef.current;
     if (!silent) setLoading(true); setError("");
     const results = await Promise.all(available.map(async (key) => {
       try {
@@ -84,13 +87,15 @@ export function ReviewQueueWorkspace() {
       }
       catch (caught) { return [key, { error: caught instanceof Error ? caught.message : "Unable to load this queue." }] as const; }
     }));
-    const next = { corrections: [], overtime: [], excess: [] } as Record<QueueType, QueueItem[]>;
+    if (requestId !== loadSequenceRef.current) return;
+    const next = { ...itemsRef.current };
     const errors: string[] = [];
     const nextErrors: Partial<Record<QueueType, string>> = {};
     for (const [key, value] of results) {
       if (Array.isArray(value)) next[key] = value as QueueItem[];
       else { nextErrors[key] = value.error; errors.push(`${endpoint[key].label}: ${value.error}`); }
     }
+    itemsRef.current = next;
     setItems(next);
     setQueueErrors(nextErrors);
     if (errors.length) setError(errors.join(" · "));
@@ -133,7 +138,7 @@ export function ReviewQueueWorkspace() {
     <PageHeader eyebrow="Time & approvals" title="Review queue" description="One focused place for attendance corrections, advance overtime requests, and excess-time reviews." />
     {notice ? <div role="status" className="success-callout" style={{ marginBottom: 14 }}>{notice}</div> : null}
     {error ? <div className="info-callout" style={{ marginBottom: 14 }}><AlertCircle size={15} />Some queue sections could not be loaded. {error}</div> : null}
-    {!workDate ? <div className="form-note" style={{ marginBottom: 14 }}>The organization work date could not be verified. The excess-time review list is using the device date for its date range; the backend remains authoritative for every review action.</div> : null}
+    {!workDate ? <div className="form-note" style={{ marginBottom: 14 }}>The organization work date could not be verified. The review list is using today's date in {timeZone}; the backend remains authoritative for every review action.</div> : null}
     <Panel>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 5, padding: 13, borderBottom: "1px solid var(--border)" }}>
         {available.map((key) => {

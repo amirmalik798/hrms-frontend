@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CalendarDays, ChevronDown, CircleDollarSign, Clock3, FileDown, LoaderCircle, Printer, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -8,7 +8,7 @@ import { Panel } from "@/components/ui/Panel";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { apiRequest } from "@/lib/api-client";
-import { formatDate, formatMoney, humanize } from "@/lib/format";
+import { formatDate, formatMoney, getISODateInTimeZone, humanize } from "@/lib/format";
 import { buildSalarySlipDocument, type SalarySlipPayload } from "@/features/payroll/salary-slip-document";
 import { useAttendanceRefresh } from "@/lib/attendance-events";
 import { useSmartRefresh } from "@/lib/smart-refresh";
@@ -58,20 +58,21 @@ function validateOwnSlipRange(fromMonth: string, toMonth: string, organizationMo
 
 export function PersonalEarningsWorkspace({ embedded = false, monthOverride }: { embedded?: boolean; monthOverride?: string } = {}) {
   const { user, workDate, currencyCode, timeZone } = useWorkspace();
-  const organizationMonth = (workDate || new Date().toISOString().slice(0, 10)).slice(0, 7);
+  const organizationMonth = (workDate || getISODateInTimeZone(timeZone)).slice(0, 7);
   const [slipFromMonth, setSlipFromMonth] = useState(organizationMonth);
   const [slipToMonth, setSlipToMonth] = useState(organizationMonth);
   const [slipGenerating, setSlipGenerating] = useState(false);
   const [slipRangeTouched, setSlipRangeTouched] = useState(false);
   const [slipError, setSlipError] = useState("");
   const [slipNotice, setSlipNotice] = useState("");
-  const [ownMonth, setOwnMonth] = useState((workDate || new Date().toISOString().slice(0, 10)).slice(0, 7));
+  const [ownMonth, setOwnMonth] = useState((workDate || getISODateInTimeZone(timeZone)).slice(0, 7));
   const month = monthOverride || ownMonth;
   const [monthChanged, setMonthChanged] = useState(false);
   const [dailyBreakdownOpen, setDailyBreakdownOpen] = useState(false);
   const [data, setData] = useState<EarningsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const loadSequenceRef = useRef(0);
   useEffect(() => { if (!monthOverride && workDate && !monthChanged) setOwnMonth(workDate.slice(0, 7)); }, [workDate, monthChanged, monthOverride]);
   useEffect(() => {
     if (workDate && !slipRangeTouched) {
@@ -82,11 +83,17 @@ export function PersonalEarningsWorkspace({ embedded = false, monthOverride }: {
   }, [workDate, slipRangeTouched]);
 
   const load = useCallback(async (silent = false) => {
+    const requestId = ++loadSequenceRef.current;
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return;
     if (!silent) setLoading(true); setError("");
-    try { setData(await apiRequest<EarningsPayload>(`/employee/earnings?month=${encodeURIComponent(month)}`)); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load your earnings for this month."); if (!silent) setData(null); }
-    finally { if (!silent) setLoading(false); }
+    try {
+      const result = await apiRequest<EarningsPayload>(`/employee/earnings?month=${encodeURIComponent(month)}`);
+      if (requestId === loadSequenceRef.current) setData(result);
+    } catch (caught) {
+      if (requestId === loadSequenceRef.current) { setError(caught instanceof Error ? caught.message : "Unable to load your earnings for this month."); if (!silent) setData(null); }
+    } finally {
+      if (!silent && requestId === loadSequenceRef.current) setLoading(false);
+    }
   }, [month]);
   useEffect(() => { void load(); }, [load]);
   useSmartRefresh(() => load(true), !slipGenerating);
