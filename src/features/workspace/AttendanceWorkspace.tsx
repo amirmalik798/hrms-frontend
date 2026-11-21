@@ -62,6 +62,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
   const [timeZone, setTimeZone] = useState("Africa/Kigali");
   const [rangeReady, setRangeReady] = useState(false);
   const [rangeRetry, setRangeRetry] = useState(0);
+  const [appliedRangeRevision, setAppliedRangeRevision] = useState(0);
   const loadSequenceRef = useRef(0);
   const [verifiedWorkDate, setVerifiedWorkDate] = useState<string | null>(workDate);
   const selfOnly = pageKey === "my-attendance" || user.role === "EMPLOYEE";
@@ -154,7 +155,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
     } finally { if (requestId === loadSequenceRef.current) setLoading(false); }
   }, [appliedFromDate, appliedToDate, selfOnly]);
 
-  useEffect(() => { if (rangeReady) void load(); }, [load, rangeReady]);
+  useEffect(() => { if (rangeReady) void load(); }, [load, rangeReady, appliedRangeRevision]);
   useAttendanceRefresh(() => { void load(true); }, rangeReady);
   useSmartRefresh(() => { if (rangeReady) return load(true); if (error) setRangeRetry((value) => value + 1); }, (rangeReady && !loading) || Boolean(error));
 
@@ -173,6 +174,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
     setLoading(true);
     setAppliedFromDate(fromDate);
     setAppliedToDate(toDate);
+    setAppliedRangeRevision((revision) => revision + 1);
   }
 
   function applyAttendancePreset(days?: number, months?: number) {
@@ -188,6 +190,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
     setToDate(end);
     setAppliedFromDate(start);
     setAppliedToDate(end);
+    setAppliedRangeRevision((revision) => revision + 1);
     setEntries([]);
     setLoading(true);
     setError("");
