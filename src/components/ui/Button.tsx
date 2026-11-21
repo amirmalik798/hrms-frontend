@@ -13,9 +13,10 @@ export function Button({ variant = "secondary", size = "md", busy, leading, disa
     <button
       {...props}
       disabled={disabled || busy}
+      aria-busy={busy || undefined}
       className={`button button-${variant} button-${size} ${className}`.trim()}
     >
-      {busy ? <LoaderCircle size={16} className="spin" /> : leading}
+      {busy ? <LoaderCircle size={16} className="spin" aria-hidden="true" /> : leading}
       {children}
     </button>
   );

@@ -116,7 +116,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       <div className={`main-region ${collapsed ? "main-region-expanded" : ""}`}>
         <header className="topbar">
           <div className="topbar-left">
-            <button type="button" className="icon-button mobile-menu-button" onClick={() => setMobileOpen((value) => !value)} aria-label={mobileOpen ? "Close navigation" : "Open navigation"}>{mobileOpen ? <X size={19} /> : <Menu size={19} />}</button>
+            <button type="button" className="icon-button mobile-menu-button" onClick={() => setMobileOpen((value) => !value)} aria-label={mobileOpen ? "Close navigation" : "Open navigation"} aria-expanded={mobileOpen}>{mobileOpen ? <X size={19} /> : <Menu size={19} />}</button>
             <div className="topbar-org"><strong>{user.organizationName}</strong><span>{activeItem?.label ?? roleLabels[user.role]}</span></div>
             <span className="topbar-divider" />
             <button type="button" className="search-trigger" onClick={() => setCommandOpen(true)}><Search size={15} /><span>Search workspace</span><kbd>⌘ K</kbd></button>
@@ -128,7 +128,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             <span className="topbar-divider" />
             <div style={{ position: "relative" }}>
               <button type="button" className="user-menu" onClick={() => setMenuOpen((value) => !value)} aria-expanded={menuOpen}>
-                <ProfilePhoto name={user.displayName || user.organizationName} currentUser={user.role !== "ORGANIZATION_ADMIN"} organizationAdmin={user.role === "ORGANIZATION_ADMIN"} /><span className="user-menu-copy"><strong>{user.displayName || roleLabels[user.role]}</strong><span>{roleLabels[user.role]}</span></span><ChevronDown size={14} color="var(--muted)" />
+                <ProfilePhoto name={user.displayName || user.organizationName} employeeId={user.employeeId} currentUser={user.role !== "ORGANIZATION_ADMIN"} organizationAdmin={user.role === "ORGANIZATION_ADMIN"} /><span className="user-menu-copy"><strong>{user.displayName || roleLabels[user.role]}</strong><span>{roleLabels[user.role]}</span></span><ChevronDown size={14} color="var(--muted)" />
               </button>
               {menuOpen ? <div className="panel" style={{ position: "absolute", top: 45, right: 0, zIndex: 50, width: 205, padding: 6, boxShadow: "var(--shadow)" }}>
                 <Link className="command-result" href={profileHref(user.role)} onClick={() => setMenuOpen(false)}><Settings2 size={15} /> Profile & preferences</Link>

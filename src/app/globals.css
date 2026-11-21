@@ -155,6 +155,7 @@ a { color: inherit; text-decoration: none; }
 .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 9px; min-width: 0; flex-wrap: wrap; }
 .search-field { height: 38px; width: min(310px, 45vw); display: flex; align-items: center; gap: 8px; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: 9px; color: var(--muted); background: var(--surface); }
 .search-field input { width: 100%; min-width: 0; border: 0; outline: 0; color: var(--text); background: transparent; font-size: 12px; }
+.search-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
 .filter-select { min-height: 38px; border: 1px solid var(--border-strong); border-radius: 9px; padding: 0 30px 0 10px; color: var(--text); background: var(--surface); font-size: 12px; }
 .table-wrap { overflow-x: auto; width: 100%; }
 .data-table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; font-size: 12px; }
@@ -287,7 +288,7 @@ a { color: inherit; text-decoration: none; }
   .search-field { width: 100%; }
   .filter-select { flex: 1; }
   .mobile-bottom-nav { position: fixed; z-index: 30; inset: auto 0 0; display: flex; justify-content: space-around; gap: 2px; padding: 7px 7px calc(7px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--border); }
-  .mobile-bottom-nav a { min-width: 0; flex: 1; display: grid; justify-items: center; gap: 3px; padding: 4px 2px; color: var(--muted); font-size: 9px; }
+  .mobile-bottom-nav a { min-width: 0; min-height: 44px; flex: 1; display: grid; align-content: center; justify-items: center; gap: 3px; padding: 4px 2px; color: var(--muted); font-size: 10px; }
   .mobile-bottom-nav a.active { color: var(--accent-strong); font-weight: 700; }
   .login-shell { grid-template-columns: 1fr; }
   .login-story { display: none; }
@@ -642,3 +643,11 @@ body { font-size: 15px; line-height: 1.55; }
 @media (max-width: 900px) { .workspace-clock-readout > span { display: none; } .workspace-clock-actionable { gap: 6px; padding: 4px 6px; } .workspace-clock-icon { width: 27px; height: 27px; } .workspace-clock-readout strong { font-size: 10px; } }
 @media (max-width: 520px) { .workspace-clock-admin .workspace-clock-readout > span { display: none; } .workspace-clock-readout strong { font-size: 10px; } .workspace-clock-action-pill { font-size: 7px; padding-inline: 5px; } .workspace-clock-icon { width: 25px; height: 25px; } }
 
+
+
+/* Compact-screen interaction refinements */
+.field-control-group { min-width: 0; }
+@media (max-width: 760px) {
+  .drawer-footer { flex-wrap: wrap; padding-bottom: calc(15px + env(safe-area-inset-bottom)); }
+  .drawer-footer > .button { flex: 1 1 auto; }
+}
