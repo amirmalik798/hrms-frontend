@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDownToLine, CalendarRange, FileBarChart, RefreshCw } from "lucide-react";
+import { ArrowDownToLine, CalendarRange, FileBarChart } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
 import { Field, SelectInput, TextInput } from "@/components/ui/Field";
@@ -12,6 +12,7 @@ import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest } from "@/lib/api-client";
 import { formatDate, humanize } from "@/lib/format";
 import { useAttendanceRefresh } from "@/lib/attendance-events";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 
 interface ReportTarget { employeeId: string; employeeCode: string; firstName: string; lastName: string; departmentName: string | null; workforceRole: string; employmentStatus: string }
 interface ReportEntry { workDate: string; scheduleName: string | null; status: string; firstClockIn: string | null; lastClockOut: string | null; workedMinutes: number; regularWorkedMinutes: number; payableOvertimeMinutes: number; excessUnapprovedOvertimeMinutes: number }
@@ -34,16 +35,16 @@ export function ReportsWorkspace() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const loadTargets = useCallback(async () => {
+  const loadTargets = useCallback(async (silent = false) => {
     if (user.role === "EMPLOYEE") return;
-    setLoadingTargets(true); setError("");
+    if (!silent) setLoadingTargets(true); setError("");
     try {
       const result = await apiRequest<{ targets?: ReportTarget[] }>("/attendance/reports/monthly?mode=targets");
       const values = Array.isArray(result.targets) ? result.targets : [];
       setTargets(values);
       setTargetId((current) => current || values[0]?.employeeId || "");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load report targets."); }
-    finally { setLoadingTargets(false); }
+    finally { if (!silent) setLoadingTargets(false); }
   }, [user.role]);
 
   useEffect(() => { void loadTargets(); }, [loadTargets]);
@@ -89,8 +90,8 @@ export function ReportsWorkspace() {
     return `/attendance/reports/monthly?${params.toString()}`;
   }
 
-  async function generate() {
-    setGenerating(true); setError(""); setNotice(""); setReport(null);
+  async function generate(silent = false) {
+    if (!silent) { setGenerating(true); setError(""); setNotice(""); setReport(null); }
     try {
       if (!targetId && user.role !== "EMPLOYEE") throw new Error("Select a workforce member first.");
       if (!isDate(fromDate) || !isDate(toDate) || fromDate > toDate) throw new Error("Choose a valid date range.");
@@ -99,10 +100,11 @@ export function ReportsWorkspace() {
       const result = await apiRequest<ReportPayload>(buildQuery(true));
       setReport(result);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to generate this attendance report."); }
-    finally { setGenerating(false); }
+    finally { if (!silent) setGenerating(false); }
   }
 
-  useAttendanceRefresh(() => { if (report) void generate(); });
+  useSmartRefresh(() => { if (report) return generate(true); if (user.role !== "EMPLOYEE") return loadTargets(true); }, !generating && !downloading && !monthlyDownloading);
+  useAttendanceRefresh(() => { if (report) void generate(true); });
 
   async function downloadPdf() {
     setDownloading(true); setError(""); setNotice("");
@@ -130,7 +132,7 @@ export function ReportsWorkspace() {
   }
 
   return <>
-    <PageHeader eyebrow="Insights" title="Attendance reports" description="Generate individual and multi-month attendance reports. Report data, role scope, and calculations are supplied by the backend." action={<Button variant="secondary" leading={<RefreshCw size={14} />} busy={loadingTargets} onClick={() => void loadTargets()}>Refresh targets</Button>} />
+    <PageHeader eyebrow="Insights" title="Attendance reports" description="Generate individual and multi-month attendance reports. Report data, role scope, and calculations are supplied by the backend." />
     {notice ? <div className="success-callout" role="status" style={{ marginBottom: 12 }}>{notice}</div> : null}
     {error ? <div className="form-error" role="alert" style={{ marginBottom: 12 }}>{error}</div> : null}
     {canGenerateOrganizationSeries ? <Panel className="panel-pad organization-monthly-report">

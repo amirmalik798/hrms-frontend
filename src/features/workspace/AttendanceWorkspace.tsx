@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertCircle, CalendarDays, RefreshCw } from "lucide-react";
+import { AlertCircle, CalendarDays } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
 import { Panel, PanelHeading } from "@/components/ui/Panel";
@@ -11,6 +11,7 @@ import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest } from "@/lib/api-client";
 import { formatDate, getLocalISODate, humanize } from "@/lib/format";
 import { useAttendanceRefresh } from "@/lib/attendance-events";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 
 interface AttendanceEntry {
   employeeId: string; employeeCode: string; firstName: string; lastName: string; departmentName: string;
@@ -137,6 +138,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
 
   useEffect(() => { if (rangeReady) void load(); }, [load, rangeReady]);
   useAttendanceRefresh(() => { void load(true); }, rangeReady);
+  useSmartRefresh(() => { if (rangeReady) return load(true); if (error) setRangeRetry((value) => value + 1); }, rangeReady || Boolean(error));
 
   function applyDateRange() {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
@@ -172,7 +174,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
   const heading = selfOnly ? "My attendance" : "Attendance";
   const description = selfOnly ? "Your attendance record, expected shift, and worked time." : "Review expected shifts against recorded attendance across your authorized scope.";
   return <>
-    <PageHeader eyebrow="Time & work" title={heading} description={description} action={<Button variant="secondary" leading={<RefreshCw size={14} />} busy={loading} onClick={() => rangeReady ? void load() : setRangeRetry((value) => value + 1)}>Refresh</Button>} />
+    <PageHeader eyebrow="Time & work" title={heading} description={description} />
     {warning ? <div className="info-callout" style={{ marginBottom: 14 }}><AlertCircle size={16} />{warning}</div> : null}
     {error ? <div role="alert" className="form-error" style={{ marginBottom: 14 }}>{error}</div> : null}
     <Panel>

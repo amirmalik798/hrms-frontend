@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertCircle, CalendarDays, Clock3, FileDown, LoaderCircle, Printer, RefreshCw, Wallet } from "lucide-react";
+import { AlertCircle, CalendarDays, Clock3, FileDown, LoaderCircle, Printer, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
@@ -11,6 +11,7 @@ import { apiRequest } from "@/lib/api-client";
 import { formatDate, formatMoney, humanize } from "@/lib/format";
 import { buildSalarySlipDocument, type SalarySlipPayload } from "@/features/payroll/salary-slip-document";
 import { useAttendanceRefresh } from "@/lib/attendance-events";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 
 interface EarningsDay {
   workDate: string; scheduleName: string | null; isPaidLeave: boolean; isPaidHoliday: boolean;
@@ -76,15 +77,16 @@ export function PersonalEarningsWorkspace() {
     }
   }, [workDate, slipRangeTouched]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return;
-    setLoading(true); setError("");
+    if (!silent) setLoading(true); setError("");
     try { setData(await apiRequest<EarningsPayload>(`/employee/earnings?month=${encodeURIComponent(month)}`)); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load your earnings for this month."); setData(null); }
-    finally { setLoading(false); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load your earnings for this month."); if (!silent) setData(null); }
+    finally { if (!silent) setLoading(false); }
   }, [month]);
   useEffect(() => { void load(); }, [load]);
-  useAttendanceRefresh(() => { void load(); });
+  useSmartRefresh(() => load(true), !slipGenerating);
+  useAttendanceRefresh(() => { void load(true); });
 
   const summary = data?.summary;
   const days = Array.isArray(data?.days) ? data.days : [];
@@ -127,7 +129,7 @@ export function PersonalEarningsWorkspace() {
   }
 
   return <>
-    <PageHeader eyebrow="My account · Compensation" title="My earnings" description="Your personal earnings estimate from recorded working time and approved overtime. This is separate from organization payroll management." action={<Button variant="secondary" leading={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>Refresh</Button>} />
+    <PageHeader eyebrow="My account · Compensation" title="My earnings" description="Your personal earnings estimate from recorded working time and approved overtime. This is separate from organization payroll management." />
     <div className="toolbar" style={{ marginBottom: 14 }}>
       <label className="field" style={{ maxWidth: 190 }}><span className="field-label">Pay period</span><input className="text-input" type="month" value={month} onChange={(event) => { setMonth(event.target.value); setMonthChanged(true); }} /></label>
       <span className="date-chip"><CalendarDays size={13} /> {zone}</span><span style={{ marginLeft: "auto" }} />
