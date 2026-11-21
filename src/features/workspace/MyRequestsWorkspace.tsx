@@ -34,6 +34,7 @@ export function MyRequestsWorkspace() {
   const [eventId, setEventId] = useState("");
   const [eventType, setEventType] = useState<"CLOCK_IN" | "CLOCK_OUT">("CLOCK_IN");
   const [correctionDate, setCorrectionDate] = useState(workDate || getLocalISODate());
+  useEffect(() => { if (workDate && correctionDate === getLocalISODate()) setCorrectionDate(workDate); }, [workDate, correctionDate]);
   const [correctionTime, setCorrectionTime] = useState("08:00");
   const [correctionReason, setCorrectionReason] = useState("");
   const [overtimeDate, setOvertimeDate] = useState("");
@@ -53,9 +54,9 @@ export function MyRequestsWorkspace() {
       const ownOvertime = (overtimeResult.requests ?? []).filter((item) => user.role === "DEPARTMENT_MANAGER" ? item.employeeId === user.employeeId : true);
       setCorrections(ownCorrections);
       setOvertime(ownOvertime);
-      const events = (calendarResult.entries ?? []).filter((entry) => entry.employeeId === user.employeeId).flatMap((entry) => (entry.events ?? []).filter((event) => event.source === "ATTENDANCE_EVENT" && event.id && event.recordedAt).map((event) => ({ id: event.id, eventType: event.eventType, recordedAt: event.recordedAt, workDate: entry.workDate })));
+      const events = (calendarResult.entries ?? []).filter((entry) => entry.employeeId === user.employeeId).flatMap((entry) => (entry.events ?? []).filter((event) => event.source === "ATTENDANCE_EVENT" && event.id && event.recordedAt).map((event) => ({ id: event.id, eventType: event.eventType, recordedAt: event.recordedAt, workDate: entry.workDate }))).sort((left, right) => Date.parse(right.recordedAt) - Date.parse(left.recordedAt));
       setRecentEvents(events.slice(0, 100));
-      if (!eventId && events[0]) { setEventId(events[0].id); setEventType(events[0].eventType); }
+      if (!eventId && events[0]) { setEventId(events[0].id); setEventType(events[0].eventType); setCorrectionTime(timeInputValue(events[0].recordedAt, timeZone)); }
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load your requests."); }
     finally { if (!silent) setLoading(false); }
   }, [user.role, user.employeeId, workDate, eventId]);
@@ -112,7 +113,7 @@ export function MyRequestsWorkspace() {
       <form id="correction-request-form" onSubmit={submitCorrection}>
         {error ? <div className="form-error" role="alert">{error}</div> : null}
         <div className="form-section"><Field label="Request type"><SelectInput value={requestMode} onChange={(e) => setRequestMode(e.target.value as "existing" | "missing")}><option value="existing">Correct an existing attendance event</option><option value="missing">Report a missing punch</option></SelectInput></Field></div>
-        {requestMode === "existing" ? <div className="form-section"><Field label="Attendance event" hint="Only your recent original attendance events are listed."><SelectInput required value={eventId} onChange={(e) => { setEventId(e.target.value); const event = recentEvents.find((item) => item.id === e.target.value); if (event) setEventType(event.eventType); }}><option value="">Choose event</option>{recentEvents.map((event) => <option key={event.id} value={event.id}>{humanize(event.eventType)} · {formatDate(event.workDate, timeZone)} · {new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", hour12: true, timeZone }).format(new Date(event.recordedAt))}</option>)}</SelectInput></Field>{selectedEvent ? <div className="form-note"><CalendarClock size={14} /> This correction keeps the original work date, {formatDate(selectedEvent.workDate, timeZone)}.</div> : <p className="field-hint">No recent original events are available to select. Use the missing-punch option if you need to report a punch that was not recorded.</p>}</div> : <div className="form-section"><div className="form-grid"><Field label="Work date"><TextInput type="date" required max={getLocalISODate()} value={correctionDate} onChange={(e) => setCorrectionDate(e.target.value)} /></Field><Field label="Missing event"><SelectInput value={eventType} onChange={(e) => setEventType(e.target.value as "CLOCK_IN" | "CLOCK_OUT")}><option value="CLOCK_IN">Clock in</option><option value="CLOCK_OUT">Clock out</option></SelectInput></Field></div></div>}
+        {requestMode === "existing" ? <div className="form-section"><Field label="Attendance event" hint="Only your recent original attendance events are listed."><SelectInput required value={eventId} onChange={(e) => { setEventId(e.target.value); const event = recentEvents.find((item) => item.id === e.target.value); if (event) { setEventType(event.eventType); setCorrectionTime(timeInputValue(event.recordedAt, timeZone)); } }}><option value="">Choose event</option>{recentEvents.map((event) => <option key={event.id} value={event.id}>{humanize(event.eventType)} · {formatDate(event.workDate, timeZone)} · {new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", hour12: true, timeZone }).format(new Date(event.recordedAt))}</option>)}</SelectInput></Field>{selectedEvent ? <div className="form-note"><CalendarClock size={14} /> This correction keeps the original work date, {formatDate(selectedEvent.workDate, timeZone)}.</div> : <p className="field-hint">No recent original events are available to select. Use the missing-punch option if you need to report a punch that was not recorded.</p>}</div> : <div className="form-section"><div className="form-grid"><Field label="Work date"><TextInput type="date" required max={workDate || getLocalISODate()} value={correctionDate} onChange={(e) => setCorrectionDate(e.target.value)} /></Field><Field label="Missing event"><SelectInput value={eventType} onChange={(e) => setEventType(e.target.value as "CLOCK_IN" | "CLOCK_OUT")}><option value="CLOCK_IN">Clock in</option><option value="CLOCK_OUT">Clock out</option></SelectInput></Field></div></div>}
         <div className="form-section"><Field label="Correct time" hint={`Use the organization's timezone: ${timeZone}. The server validates the work date and offset.`}><TextInput required type="time" value={correctionTime} onChange={(e) => setCorrectionTime(e.target.value)} /></Field><Field label="Reason" hint="Required. Maximum 500 characters."><TextArea required minLength={1} maxLength={500} rows={3} value={correctionReason} onChange={(e) => setCorrectionReason(e.target.value)} placeholder="Explain what happened and why this attendance record needs correction." /></Field></div>
       </form>
     </Drawer>
@@ -123,6 +124,19 @@ export function MyRequestsWorkspace() {
       </form>
     </Drawer>
   </>;
+}
+
+function timeInputValue(value: string, timeZone: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "08:00";
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(date);
+    const hour = parts.find((part) => part.type === "hour")?.value;
+    const minute = parts.find((part) => part.type === "minute")?.value;
+    return hour && minute ? `${hour}:${minute}` : "08:00";
+  } catch {
+    return "08:00";
+  }
 }
 
 function makeCalendarUrl(role: string, date: string) {

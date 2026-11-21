@@ -19,7 +19,7 @@ interface Holiday { id: string; holidayDate: string; name: string; isPaid: boole
 type Tab = "requests" | "holidays";
 
 export function LeaveWorkspace() {
-  const { user } = useWorkspace();
+  const { user, workDate } = useWorkspace();
   const [tab, setTab] = useState<Tab>("requests");
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
@@ -35,6 +35,8 @@ export function LeaveWorkspace() {
   const [reviewerNote, setReviewerNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [leaveStartDate, setLeaveStartDate] = useState("");
+  const [leaveEndDate, setLeaveEndDate] = useState("");
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true); setError("");
@@ -64,8 +66,11 @@ export function LeaveWorkspace() {
     event.preventDefault(); setSaving(true); setError("");
     const form = new FormData(event.currentTarget);
     try {
-      await apiRequest("/leave/requests", { method: "POST", body: JSON.stringify({ leaveType: String(form.get("leaveType")), startDate: String(form.get("startDate")), endDate: String(form.get("endDate")), reason: String(form.get("reason")).trim() }) });
-      setRequestOpen(false); setNotice("Leave request submitted. Its status will update when it is reviewed."); await load();
+      const startDate = String(form.get("startDate"));
+      const endDate = String(form.get("endDate"));
+      if (!startDate || !endDate || startDate > endDate) throw new Error("The end date must be on or after the start date.");
+      await apiRequest("/leave/requests", { method: "POST", body: JSON.stringify({ leaveType: String(form.get("leaveType")), startDate, endDate, reason: String(form.get("reason")).trim() }) });
+      setRequestOpen(false); setLeaveStartDate(""); setLeaveEndDate(""); setNotice("Leave request submitted. Its status will update when it is reviewed."); await load();
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to submit your leave request."); }
     finally { setSaving(false); }
   }
@@ -104,13 +109,13 @@ export function LeaveWorkspace() {
   }
 
   return <>
-    <PageHeader eyebrow="Time off" title="Leave & holidays" description="Keep leave requests, review decisions, and organization holidays in one clear view." action={<div style={{ display:"flex", gap:8 }}>{user.role !== "ORGANIZATION_ADMIN" ? <Button variant="primary" leading={<Plus size={14} />} onClick={() => setRequestOpen(true)}>Request leave</Button> : null}{canManageHolidays ? <Button variant="secondary" leading={<Plus size={14} />} onClick={() => setHolidayOpen(true)}>Add holiday</Button> : null}</div>} />
+    <PageHeader eyebrow="Time off" title="Leave & holidays" description="Keep leave requests, review decisions, and organization holidays in one clear view." action={<div style={{ display:"flex", gap:8 }}>{user.role !== "ORGANIZATION_ADMIN" ? <Button variant="primary" leading={<Plus size={14} />} onClick={() => { setError(""); setLeaveStartDate(""); setLeaveEndDate(""); setRequestOpen(true); }}>Request leave</Button> : null}{canManageHolidays ? <Button variant="secondary" leading={<Plus size={14} />} onClick={() => setHolidayOpen(true)}>Add holiday</Button> : null}</div>} />
     {notice ? <div role="status" className="success-callout" style={{ marginBottom: 13 }}><CheckCircle2 size={15} />{notice}</div> : null}
     {error ? <div role="alert" className="form-error" style={{ marginBottom: 13 }}>{error}</div> : null}
     <Panel>
       <div style={{ display:"flex", flexWrap:"wrap", alignItems:"center", justifyContent:"space-between", gap:12, padding:"12px 16px", borderBottom:"1px solid var(--border)" }}>
         <div style={{ display:"flex", gap:5 }}><button type="button" className={`button button-sm ${tab === "requests" ? "button-primary" : "button-ghost"}`} onClick={() => setTab("requests")}>Leave requests <span className="task-count">{pending}</span></button><button type="button" className={`button button-sm ${tab === "holidays" ? "button-primary" : "button-ghost"}`} onClick={() => setTab("holidays")}>Public holidays</button></div>
-        {tab === "requests" ? <label className="search-field" style={{ maxWidth:280 }}><CalendarDays size={14} /><input aria-label="Search leave requests" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search people or request…" /></label> : null}
+        {tab === "requests" && user.role !== "EMPLOYEE" ? <label className="search-field" style={{ maxWidth:280 }}><CalendarDays size={14} /><input aria-label="Search leave requests" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search people or request…" /></label> : null}
       </div>
       {loading && !requests.length && !holidays.length ? <div className="loading-state">Loading leave information…</div> : null}
       {tab === "requests" ? visibleRequests.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Person</th><th>Leave type</th><th>Dates</th><th>Paid</th><th>Reason</th><th>Status</th><th /></tr></thead><tbody>{visibleRequests.map((item) => {
@@ -120,8 +125,8 @@ export function LeaveWorkspace() {
       })}</tbody></table></div> : <div className="empty-state"><div className="state-icon"><CalendarDays size={18} /></div><h3>{search ? "No matching requests" : "No leave requests"}</h3><p>{search ? "Try another search term." : "New requests and their review status will appear here."}</p></div> : holidays.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Date</th><th>Holiday</th><th>Paid</th><th>Notes</th><th /></tr></thead><tbody>{holidays.map((holiday) => <tr key={holiday.id}><td>{formatDate(holiday.holidayDate)}</td><td><span className="table-primary">{holiday.name}</span></td><td><StatusBadge value={holiday.isPaid ? "PAID" : "UNPAID"} /></td><td>{holiday.notes || "—"}</td><td>{canManageHolidays ? <button type="button" className="icon-button" aria-label={`Remove ${holiday.name}`} disabled={saving} onClick={() => setHolidayToRemove(holiday)}><Trash2 size={15} /></button> : null}</td></tr>)}</tbody></table></div> : <div className="empty-state"><div className="state-icon"><CalendarDays size={18} /></div><h3>No public holidays configured</h3><p>Organization Admins and HR Managers can add public holidays to the organization calendar.</p></div>}
     </Panel>
 
-    <Drawer open={requestOpen} title="Request time off" description="Send a leave request for your manager to review." onClose={() => setRequestOpen(false)} footer={<><Button variant="secondary" onClick={() => setRequestOpen(false)}>Cancel</Button><Button variant="primary" busy={saving} onClick={() => document.querySelector<HTMLFormElement>("#leave-request-form")?.requestSubmit()}>Submit request</Button></>}>
-      <form id="leave-request-form" onSubmit={submitLeave}><div className="form-grid"><Field label="Leave type"><SelectInput name="leaveType" required><option value="ANNUAL">Annual leave</option><option value="SICK">Sick leave</option><option value="PERSONAL">Personal leave</option><option value="PARENTAL">Parental leave</option><option value="UNPAID">Unpaid leave</option><option value="OTHER">Other</option></SelectInput></Field><Field label="Start date"><TextInput name="startDate" type="date" required /></Field><Field label="End date"><TextInput name="endDate" type="date" required /></Field><Field label="Reason" hint="3–1,000 characters"><TextArea name="reason" required minLength={3} maxLength={1000} rows={4} /></Field></div><div className="form-note"><Clock3 size={15} /> The backend prevents overlapping pending or approved leave requests and determines paid/unpaid treatment from the selected leave type.</div></form>
+    <Drawer open={requestOpen} title="Request time off" description="Send a leave request for your manager to review." onClose={() => { if (!saving) setRequestOpen(false); }} footer={<><Button variant="secondary" disabled={saving} onClick={() => setRequestOpen(false)}>Cancel</Button><Button variant="primary" busy={saving} onClick={() => document.querySelector<HTMLFormElement>("#leave-request-form")?.requestSubmit()}>Submit request</Button></>}>
+      <form id="leave-request-form" onSubmit={submitLeave}>{error ? <div className="form-error" role="alert" style={{ marginBottom: 12 }}>{error}</div> : null}<div className="form-grid"><Field label="Leave type"><SelectInput name="leaveType" required><option value="ANNUAL">Annual leave</option><option value="SICK">Sick leave</option><option value="PERSONAL">Personal leave</option><option value="PARENTAL">Parental leave</option><option value="UNPAID">Unpaid leave</option><option value="OTHER">Other</option></SelectInput></Field><Field label="Start date"><TextInput name="startDate" type="date" required max={leaveEndDate || undefined} value={leaveStartDate} onChange={(event) => { setLeaveStartDate(event.target.value); if (leaveEndDate && event.target.value > leaveEndDate) setLeaveEndDate(""); }} /></Field><Field label="End date"><TextInput name="endDate" type="date" required min={leaveStartDate || undefined} value={leaveEndDate} onChange={(event) => setLeaveEndDate(event.target.value)} /></Field><Field label="Reason" hint="3–1,000 characters"><TextArea name="reason" required minLength={3} maxLength={1000} rows={4} /></Field></div><div className="form-note"><Clock3 size={15} /> The backend prevents overlapping pending or approved leave requests and determines paid/unpaid treatment from the selected leave type.</div></form>
     </Drawer>
 
     <Drawer open={holidayOpen} title="Add public holiday" description="Add a date to the organization's public holiday calendar." onClose={() => setHolidayOpen(false)} footer={<><Button variant="secondary" onClick={() => setHolidayOpen(false)}>Cancel</Button><Button variant="primary" busy={saving} onClick={() => document.querySelector<HTMLFormElement>("#holiday-form")?.requestSubmit()}>Save holiday</Button></>}>

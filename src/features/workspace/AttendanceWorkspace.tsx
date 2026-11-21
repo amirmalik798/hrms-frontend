@@ -28,6 +28,15 @@ function shiftDate(value: string, offset: number) {
   date.setUTCDate(date.getUTCDate() + offset);
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 }
+function shiftMonthsClamped(value: string, offset: number) {
+  const [year, month, day] = value.split("-").map(Number);
+  const targetMonthIndex = year * 12 + (month - 1) + offset;
+  const targetYear = Math.floor(targetMonthIndex / 12);
+  const targetMonth = ((targetMonthIndex % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+}
+
 function duration(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "—";
   return `${Math.floor(value / 60)}h ${String(value % 60).padStart(2, "0")}m`;
@@ -41,7 +50,7 @@ function timeLabel(value: string | null | undefined, timeZone: string) {
 }
 
 export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
-  const { user } = useWorkspace();
+  const { user, workDate } = useWorkspace();
   const [entries, setEntries] = useState<AttendanceEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -155,12 +164,10 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
   }
 
   function applyAttendancePreset(days?: number, months?: number) {
-    const end = appliedToDate || getLocalISODate();
+    const end = workDate || appliedToDate || getLocalISODate();
     let start = end;
     if (months) {
-      const date = new Date(`${end}T12:00:00Z`);
-      date.setUTCMonth(date.getUTCMonth() - months);
-      start = shiftDate(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`, 1);
+      start = shiftDate(shiftMonthsClamped(end, -months), 1);
     } else if (days) {
       start = shiftDate(end, -(days - 1));
     }

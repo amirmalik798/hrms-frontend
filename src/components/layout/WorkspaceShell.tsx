@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Activity, Bell, Building2, Check, ChevronDown, ChevronsLeft, ChevronsRight, LogOut, Menu, Moon, Search, Settings2, ShieldCheck, Sun, X } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { workspaceNavigation, roleLabels, type NavItem } from "@/lib/workspace-config";
@@ -20,6 +20,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
+  const commandPanelRef = useRef<HTMLElement | null>(null);
   const [commandQuery, setCommandQuery] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [logoutBusy, setLogoutBusy] = useState(false);
@@ -68,6 +69,30 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => { setMobileOpen(false); }, [pathname]);
+
+  useEffect(() => {
+    if (!commandOpen) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = window.requestAnimationFrame(() => {
+      const first = commandPanelRef.current?.querySelector<HTMLElement>("input:not([disabled]), button:not([disabled])");
+      (first ?? commandPanelRef.current)?.focus();
+    });
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || !commandPanelRef.current) return;
+      const focusable = Array.from(commandPanelRef.current.querySelectorAll<HTMLElement>('input:not([disabled]), button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'));
+      if (!focusable.length) { event.preventDefault(); commandPanelRef.current.focus(); return; }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    window.addEventListener("keydown", trapFocus);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", trapFocus);
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [commandOpen]);
 
   const filteredItems = allItems.filter((item) => `${item.label} ${item.href}`.toLowerCase().includes(commandQuery.toLowerCase()));
   const activeItem = allItems.find((item) => pathname === item.href || (item.href !== "/" && pathname.startsWith(`${item.href}/`))) ?? allItems[0];
@@ -121,7 +146,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             <button type="button" className="icon-button mobile-menu-button" onClick={() => setMobileOpen((value) => !value)} aria-label={mobileOpen ? "Close navigation" : "Open navigation"} aria-expanded={mobileOpen}>{mobileOpen ? <X size={19} /> : <Menu size={19} />}</button>
             <div className="topbar-org"><strong>{user.organizationName}</strong><span>{activeItem?.label ?? roleLabels[user.role]}</span></div>
             <span className="topbar-divider" />
-            <button type="button" className="search-trigger" onClick={() => setCommandOpen(true)}><Search size={15} /><span>Search workspace</span></button>
+            <button type="button" className="search-trigger" aria-haspopup="dialog" aria-expanded={commandOpen} onClick={() => setCommandOpen(true)}><Search size={15} /><span>Search workspace</span></button>
           </div>
           <div className="topbar-actions">
             <WorkspaceClock timeZone={timeZone} timeZoneStatus={timeZoneStatus} showAttendanceStatus={user.role !== "ORGANIZATION_ADMIN"} />
@@ -151,8 +176,8 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       </nav>
 
       {commandOpen ? <div className="command-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setCommandOpen(false); }}>
-        <section className="command-panel" role="dialog" aria-modal="true" aria-label="Search workspace">
-          <input autoFocus className="command-input" placeholder="Search a page or task…" value={commandQuery} onChange={(event) => setCommandQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && filteredItems[0]) { router.push(filteredItems[0].href); setCommandOpen(false); setCommandQuery(""); } }} />
+        <section className="command-panel" role="dialog" aria-modal="true" aria-label="Search workspace" ref={commandPanelRef} tabIndex={-1}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, paddingRight: 10 }}><input autoFocus className="command-input" aria-label="Search a page or task" placeholder="Search a page or task…" value={commandQuery} onChange={(event) => setCommandQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && filteredItems[0]) { router.push(filteredItems[0].href); setCommandOpen(false); setCommandQuery(""); } }} /><button type="button" className="icon-button" aria-label="Close workspace search" onClick={() => setCommandOpen(false)}><X size={16} /></button></div>
           <div className="command-results">{filteredItems.length ? filteredItems.map((item) => { const Icon = item.icon; return <button type="button" key={item.href} className="command-result" style={{ width: "100%", border: 0, background: "transparent", textAlign: "left" }} onClick={() => { router.push(item.href); setCommandOpen(false); setCommandQuery(""); }}><Icon size={16} /><span>{item.label}</span><span style={{ marginLeft: "auto", color: "var(--subtle)", fontSize: 10 }}>{item.href}</span></button>; }) : <div className="empty-state"><h3>No matching pages</h3><p>Try a different keyword.</p></div>}</div>
         </section>
       </div> : null}
