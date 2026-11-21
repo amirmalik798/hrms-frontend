@@ -85,7 +85,7 @@ export function WorkspaceGate({ role, children }: { role: WorkspaceRole; childre
           const profile = await apiRequest<{ profile?: { firstName?: string; lastName?: string } }>("/org/profile");
           firstName = profile.profile?.firstName || firstName;
           lastName = profile.profile?.lastName || lastName;
-        } else if (candidate.employeeId && role === "EMPLOYEE") {
+        } else if (role === "EMPLOYEE") {
           const profile = await apiRequest<{ employee?: { first_name?: string; last_name?: string | null } }>("/employees/me");
           firstName = profile.employee?.first_name || firstName;
           lastName = profile.employee?.last_name || lastName;
