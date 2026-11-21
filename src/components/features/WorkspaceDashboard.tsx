@@ -33,7 +33,7 @@ interface DashboardData {
 }
 
 export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
-  const { user, timeZone } = useWorkspace();
+  const { user, timeZone, workDate } = useWorkspace();
   const organizationHour = useMemo(() => {
     try { return Number(new Intl.DateTimeFormat("en-US", { timeZone, hour: "2-digit", hourCycle: "h23" }).format(new Date())); }
     catch { return new Date().getHours(); }
@@ -120,7 +120,7 @@ export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
     <PageHeader eyebrow={roleLabels[role]} title={heading} description={description} />
     <div className="dashboard-intro" style={{ marginBottom: 18 }}>
       <div><h2>{role === "EMPLOYEE" ? `Welcome to your workspace` : `Good ${organizationHour < 12 ? "morning" : organizationHour < 18 ? "afternoon" : "evening"}`}, {user.displayName || roleLabels[role]}.</h2><p>{role === "EMPLOYEE" ? "Your personal work information is all in one place." : `Here is the latest view from ${user.organizationName}.`}</p></div>
-      <span className="date-chip"><CalendarClock size={14} /> {formatDate(data?.workDate ?? new Date().toISOString(), timeZone)}</span>
+      <span className="date-chip"><CalendarClock size={14} /> {formatDate(data?.workDate ?? workDate ?? new Date().toISOString(), timeZone)}</span>
     </div>
 
     {error ? <div className="error-state panel" style={{ marginBottom: 18 }}><div className="state-icon"><AlertCircle size={19} /></div><h3>We could not load this overview</h3><p>{error} The workspace will retry automatically.</p></div> : null}
@@ -129,7 +129,7 @@ export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
       {metrics.map((metric) => { const Icon = metric.icon; return <Panel key={metric.label} className="metric-card"><div className="metric-label"><span>{metric.label}</span><span className="metric-icon"><Icon size={16} /></span></div><div className="metric-value">{loading ? <span className="skeleton" style={{ display: "inline-block", width: 76, height: 30 }} /> : typeof metric.value === "number" ? formatNumber(metric.value) : metric.value ?? "—"}</div><div className="metric-foot">{metric.note}</div></Panel>; })}
     </div>
 
-    {role === "EMPLOYEE" ? <EmployeeHomeContent clockStatus={data?.clockStatus} events={data?.events ?? []} /> : <div className="page-grid grid-2">
+    {role === "EMPLOYEE" ? <EmployeeHomeContent clockStatus={data?.clockStatus} events={data?.events ?? []} timeZone={timeZone} /> : <div className="page-grid grid-2">
       <Panel>
         <PanelHeading title={role === "DEPARTMENT_MANAGER" ? "My departments" : "Work that needs attention"} description={role === "DEPARTMENT_MANAGER" ? "Only departments assigned to your manager account." : "Go straight to the next action instead of searching through the workspace."} />
         {loading ? <div className="loading-state"><div className="skeleton" style={{ height: 14, width: "60%", margin: "0 auto" }} /></div> : role === "DEPARTMENT_MANAGER" ? (data?.departments?.length ? data.departments.map((row) => <div className="task-row" key={stringValue(row, "id")}><div><strong>{stringValue(row, "name") || "Department"}</strong><span>{formatNumber(numberValue(row, "activeEmployeeCount") ?? 0)} active of {formatNumber(numberValue(row, "employeeCount") ?? 0)} members</span></div><span className="task-count">{numberValue(row, "employeeCount") ?? 0}</span></div>) : <div className="empty-state"><div className="state-icon"><Building2 size={18} /></div><h3>No assigned departments</h3><p>Your assigned department list will appear here when it is available.</p></div>) : <AttentionLinks role={role} stats={stats} reviews={reviews} />}
@@ -171,7 +171,26 @@ async function readEmployeeClockStatus(): Promise<"CLOCKED_IN" | "CLOCKED_OUT"> 
   return current;
 }
 
-function EmployeeHomeContent({ clockStatus, events }: { clockStatus?: string; events: Record<string, unknown>[] }) {
+function formatPunchTimestamp(value: unknown, timeZone: string) {
+  if (typeof value !== "string" || !value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone,
+    }).format(date);
+  } catch {
+    return value;
+  }
+}
+
+function EmployeeHomeContent({ clockStatus, events, timeZone }: { clockStatus?: string; events: Record<string, unknown>[]; timeZone: string }) {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<"CLOCKED_IN" | "CLOCKED_OUT" | "loading" | "unavailable">(
     clockStatus === "CLOCKED_IN" || clockStatus === "CLOCKED_OUT" ? clockStatus : "loading",
@@ -231,7 +250,7 @@ function EmployeeHomeContent({ clockStatus, events }: { clockStatus?: string; ev
     </Panel>
     <Panel>
       <PanelHeading title="Recent punches" description="Your most recent recorded attendance events." />
-      {events.length ? events.slice(0, 6).map((event, index) => <div className="activity-row" key={stringValue(event, "id") || index}><span className="activity-dot" /><div><strong>{humanize(stringValue(event, "eventType") || "Attendance event")}</strong><span>{formatDate(stringValue(event, "recordedAt"))} · {stringValue(event, "source") || "Recorded event"}</span></div></div>) : <div className="empty-state"><div className="state-icon"><Clock3 size={18} /></div><h3>No punches recorded yet</h3><p>Your attendance history will appear here once an event is recorded.</p></div>}
+      {events.length ? events.slice(0, 6).map((event, index) => <div className="activity-row" key={stringValue(event, "id") || index}><span className="activity-dot" /><div><strong>{humanize(stringValue(event, "eventType") || "Attendance event")}</strong><span>{formatPunchTimestamp(event.recordedAt, timeZone)} · {stringValue(event, "source") || "Recorded event"}</span></div></div>) : <div className="empty-state"><div className="state-icon"><Clock3 size={18} /></div><h3>No punches recorded yet</h3><p>Your attendance history will appear here once an event is recorded.</p></div>}
     </Panel>
   </div>;
 }
