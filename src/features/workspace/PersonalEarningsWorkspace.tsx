@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertCircle, CalendarDays, ChevronDown, Clock3, FileDown, LoaderCircle, Printer, Wallet } from "lucide-react";
+import { AlertCircle, CalendarDays, ChevronDown, CircleDollarSign, Clock3, FileDown, LoaderCircle, Printer, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
@@ -13,7 +13,6 @@ import { buildSalarySlipDocument, type SalarySlipPayload } from "@/features/payr
 import { useAttendanceRefresh } from "@/lib/attendance-events";
 import { useSmartRefresh } from "@/lib/smart-refresh";
 import { assertSalarySlipUsesOrganizationCurrency, normalizeCurrencyCode } from "@/lib/payroll-currency";
-import { CircleDollarSign } from "lucide-react";
 
 interface EarningsDay {
   workDate: string; scheduleName: string | null; isPaidLeave: boolean; isPaidHoliday: boolean;
@@ -168,7 +167,7 @@ export function PersonalEarningsWorkspace({ embedded = false, monthOverride }: {
       {!loading && !error && !days.length ? <div className="empty-state"><div className="state-icon"><Wallet size={18} /></div><h3>No earnings details for this period</h3><p>Your daily schedule and attendance details will appear here when available.</p></div> : null}
       {days.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Work date</th><th>Schedule</th><th>Clock in / out</th><th>Worked</th><th>Approved OT</th><th>Daily earnings</th><th>Status</th></tr></thead><tbody>{days.map((day) => {
         const dayCurrency = normalizeCurrencyCode(day.currencyCode || data?.currencyCode);
-        const dayCurrencyMismatch = !organizationCurrencyCode || Boolean(dayCurrency && dayCurrency !== organizationCurrencyCode);
+        const dayCurrencyMismatch = !organizationCurrencyCode || (day.payableMinutes > 0 && (!dayCurrency || dayCurrency !== organizationCurrencyCode));
         return <tr key={day.workDate}>
         <td><span className="table-primary">{formatDate(day.workDate, zone)}</span></td>
         <td>{day.scheduleName || "No shift"}{day.isPaidLeave ? <span className="table-secondary">Paid leave</span> : day.isPaidHoliday ? <span className="table-secondary">Paid holiday</span> : null}</td>

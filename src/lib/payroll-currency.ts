@@ -33,7 +33,7 @@ export function assertSalarySlipUsesOrganizationCurrency(
       period.currencyCode ? normalizeCurrencyCode(period.currencyCode) !== expected : period.hourlyRate !== null || period.overtimeRate !== null
     ) ||
     (month.days ?? []).some((day) =>
-      day.currencyCode ? normalizeCurrencyCode(day.currencyCode) !== expected : day.estimatedPay !== null && day.estimatedPay !== undefined
+      day.payableMinutes > 0 && (day.currencyCode ? normalizeCurrencyCode(day.currencyCode) !== expected : true)
     )
   );
 

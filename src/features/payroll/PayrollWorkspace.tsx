@@ -102,18 +102,18 @@ export function PayrollWorkspace() {
   });
   const paidPayments = payments.filter((item) => item.status === "PAID");
   const duePayments = payments.filter((item) => item.status === "UNPAID");
+  const hasMonetaryValue = (item: Payment) => item.amount !== null || item.calculatedAmount !== null || item.payableMinutes > 0;
+  const paymentCurrencyMismatch = (item: Payment) => hasMonetaryValue(item) && !paymentUsesOrganizationCurrency(item.currencyCode, organizationCurrencyCode, item.currencyMismatch);
   const paidTotal = paidPayments.reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
   const dueTotal = duePayments.reduce((sum, item) => sum + Number(item.calculatedAmount ?? 0), 0);
-  const paidCurrencyMismatch = paidPayments.some((item) => !paymentUsesOrganizationCurrency(item.currencyCode, organizationCurrencyCode, item.currencyMismatch));
-  const dueCurrencyMismatch = duePayments.some((item) => !paymentUsesOrganizationCurrency(item.currencyCode, organizationCurrencyCode, item.currencyMismatch));
+  const paidCurrencyMismatch = paidPayments.some(paymentCurrencyMismatch);
+  const dueCurrencyMismatch = duePayments.some(paymentCurrencyMismatch);
   const payableCount = payments.filter((item) => item.status === "UNPAID" || item.status === "PAID").length;
   const needsAttentionCount = payments.filter((item) =>
     ["RATE_REQUIRED", "CURRENCY_MISMATCH", "NO_RECORDED_HOURS"].includes(item.status) ||
-    !paymentUsesOrganizationCurrency(item.currencyCode, organizationCurrencyCode, item.currencyMismatch)
+    paymentCurrencyMismatch(item)
   ).length;
-  const currencyMismatchCount = payments.filter((item) =>
-    !paymentUsesOrganizationCurrency(item.currencyCode, organizationCurrencyCode, item.currencyMismatch)
-  ).length;
+  const currencyMismatchCount = payments.filter(paymentCurrencyMismatch).length;
 
   function openPayment(item: Payment) {
     if (!paymentUsesOrganizationCurrency(item.currencyCode, organizationCurrencyCode, item.currencyMismatch)) {
@@ -281,7 +281,7 @@ export function PayrollWorkspace() {
       {loading && !payments.length ? <div className="loading-state">Calculating monthly salary records…</div> : null}
       {!loading && !error && !visible.length ? <div className="empty-state"><div className="state-icon"><BadgeDollarSign size={18} /></div><h3>No salary records for this period</h3><p>There are no payment or payable-work records available for {month} in your authorized scope.</p></div> : null}
       {visible.length ? <div className="table-wrap"><table className="data-table"><thead><tr>{user.role !== "EMPLOYEE" ? <th>Employee</th> : null}<th>Hours</th><th>Calculated amount</th><th>Status</th><th>Payment reference</th><th>Paid date</th><th /></tr></thead><tbody>{visible.map((item) => {
-        const currencyMatches = paymentUsesOrganizationCurrency(item.currencyCode, organizationCurrencyCode, item.currencyMismatch);
+        const currencyMatches = !paymentCurrencyMismatch(item);
         return <tr key={item.employeeId}>
         {user.role !== "EMPLOYEE" ? <td><div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}><ProfilePhoto employeeId={item.employeeId} name={`${item.firstName || ""} ${item.lastName || ""}`.trim() || item.employeeCode || "Employee"} className="user-avatar" /><span style={{ minWidth: 0 }}><span className="table-primary">{item.firstName} {item.lastName}</span><span className="table-secondary">{item.employeeCode} · {item.departmentName || humanize(item.workforceRole)}</span></span></div></td> : null}
         <td><span className="table-primary">{duration(item.workedMinutes)}</span><span className="table-secondary">{duration(item.payableMinutes)} payable</span></td>
