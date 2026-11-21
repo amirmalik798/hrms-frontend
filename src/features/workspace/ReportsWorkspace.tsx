@@ -34,6 +34,7 @@ export function ReportsWorkspace() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [autoPreviewRevision, setAutoPreviewRevision] = useState(0);
+  const [selectedDatePreset, setSelectedDatePreset] = useState<"7d" | "14d" | "3m" | "6m" | "12m" | null>(null);
 
   const loadTargets = useCallback(async (silent = false) => {
     if (user.role === "EMPLOYEE") return;
@@ -51,6 +52,7 @@ export function ReportsWorkspace() {
   useEffect(() => { if (workDate) { setToDate(workDate); setFromDate((current) => current === monthStart(todayISO()) ? monthStart(workDate) : current); setToMonth((current) => current === todayISO().slice(0, 7) ? workDate.slice(0, 7) : current); setFromMonth((current) => current === todayISO().slice(0, 7) ? workDate.slice(0, 7) : current); } }, [workDate]);
 
   function applyDatePreset(preset: "7d" | "14d" | "3m" | "6m" | "12m") {
+    setSelectedDatePreset(preset);
     const end = workDate || todayISO();
     const start = preset.endsWith("d")
       ? shiftDate(end, -(Number(preset.slice(0, -1)) - 1))
@@ -198,16 +200,16 @@ export function ReportsWorkspace() {
     <Panel className="panel-pad">
       <div className="report-filter-grid">
         {user.role !== "EMPLOYEE" ? <Field label="Workforce member"><SelectInput required value={targetId} onChange={(event) => { setTargetId(event.target.value); setReport(null); }}><option value="">Select a person</option>{targets.map((target) => <option key={target.employeeId} value={target.employeeId}>{target.firstName} {target.lastName} · {target.employeeCode} · {target.departmentName || "No department"}</option>)}</SelectInput></Field> : <Field label="Report subject"><TextInput disabled value="My attendance" /></Field>}
-        <Field label="From date"><TextInput type="date" value={fromDate} max={toDate} onChange={(event) => { setFromDate(event.target.value); setReport(null); setError(""); setAutoPreviewRevision((revision) => revision + 1); }} /></Field>
-        <Field label="To date"><TextInput type="date" value={toDate} min={fromDate} onChange={(event) => { setToDate(event.target.value); setReport(null); setError(""); setAutoPreviewRevision((revision) => revision + 1); }} /></Field>
+        <Field label="From date"><TextInput type="date" value={fromDate} max={toDate} onChange={(event) => { setFromDate(event.target.value); setSelectedDatePreset(null); setReport(null); setError(""); setAutoPreviewRevision((revision) => revision + 1); }} /></Field>
+        <Field label="To date"><TextInput type="date" value={toDate} min={fromDate} onChange={(event) => { setToDate(event.target.value); setSelectedDatePreset(null); setReport(null); setError(""); setAutoPreviewRevision((revision) => revision + 1); }} /></Field>
       </div>
       <div className="report-date-presets" role="group" aria-label="Attendance report date range presets" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 7, marginTop: 12 }}>
         <span className="field-hint" style={{ marginRight: 3 }}>Quick range:</span>
-        <button type="button" className="button button-sm button-secondary" onClick={() => applyDatePreset("7d")}>Last 7 days</button>
-        <button type="button" className="button button-sm button-secondary" onClick={() => applyDatePreset("14d")}>Last 14 days</button>
-        <button type="button" className="button button-sm button-secondary" onClick={() => applyDatePreset("3m")}>Last 3 months</button>
-        <button type="button" className="button button-sm button-secondary" onClick={() => applyDatePreset("6m")}>Last 6 months</button>
-        <button type="button" className="button button-sm button-secondary" onClick={() => applyDatePreset("12m")}>Last 12 months</button>
+<button type="button" className={`button button-sm ${selectedDatePreset === "7d" ? "button-primary" : "button-secondary"}`} aria-pressed={selectedDatePreset === "7d"} onClick={() => applyDatePreset("7d")}>Last 7 days</button>
+        <button type="button" className={`button button-sm ${selectedDatePreset === "14d" ? "button-primary" : "button-secondary"}`} aria-pressed={selectedDatePreset === "14d"} onClick={() => applyDatePreset("14d")}>Last 14 days</button>
+        <button type="button" className={`button button-sm ${selectedDatePreset === "3m" ? "button-primary" : "button-secondary"}`} aria-pressed={selectedDatePreset === "3m"} onClick={() => applyDatePreset("3m")}>Last 3 months</button>
+        <button type="button" className={`button button-sm ${selectedDatePreset === "6m" ? "button-primary" : "button-secondary"}`} aria-pressed={selectedDatePreset === "6m"} onClick={() => applyDatePreset("6m")}>Last 6 months</button>
+        <button type="button" className={`button button-sm ${selectedDatePreset === "12m" ? "button-primary" : "button-secondary"}`} aria-pressed={selectedDatePreset === "12m"} onClick={() => applyDatePreset("12m")}>Last 12 months</button>
       </div>
       {selectedTarget ? <div className="report-selected-person"><ProfilePhoto name={`${selectedTarget.firstName} ${selectedTarget.lastName}`} employeeId={selectedTarget.employeeId} currentUser={user.role === "EMPLOYEE" && selectedTarget.employeeId === user.employeeId} /><span><strong>{selectedTarget.firstName} {selectedTarget.lastName}</strong><small>{selectedTarget.employeeCode} · {selectedTarget.departmentName || "No department"}</small></span></div> : null}
       <div className="report-filter-footer"><p>Organization timezone: <strong>{timeZone}</strong>. Maximum report span: 24 calendar months.</p><div style={{ display: "flex", gap: 8 }}><Button variant="secondary" leading={<FileBarChart size={14} />} busy={generating} disabled={loadingTargets || (!targetId && user.role !== "EMPLOYEE")} onClick={() => void generate()}>Preview report</Button><Button variant="primary" leading={<ArrowDownToLine size={14} />} busy={downloading} disabled={loadingTargets || (!targetId && user.role !== "EMPLOYEE")} onClick={() => void downloadPdf()}>Download PDF</Button></div></div>

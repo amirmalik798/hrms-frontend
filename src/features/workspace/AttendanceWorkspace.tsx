@@ -63,6 +63,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
   const [rangeReady, setRangeReady] = useState(false);
   const [rangeRetry, setRangeRetry] = useState(0);
   const [appliedRangeRevision, setAppliedRangeRevision] = useState(0);
+  const [selectedPreset, setSelectedPreset] = useState<"7d" | "14d" | "1m" | "3m" | "6m" | null>(null);
   const loadSequenceRef = useRef(0);
   const [verifiedWorkDate, setVerifiedWorkDate] = useState<string | null>(workDate);
   const selfOnly = pageKey === "my-attendance" || user.role === "EMPLOYEE";
@@ -169,6 +170,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
       return;
     }
     loadSequenceRef.current += 1;
+    setSelectedPreset(null);
     setError("");
     setEntries([]);
     setLoading(true);
@@ -206,23 +208,24 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
       <PanelHeading title="Attendance calendar" description={appliedFromDate && appliedToDate ? `${formatDate(appliedFromDate, timeZone)} — ${formatDate(appliedToDate, timeZone)} · ${timeZone}` : `Choose a date range · ${timeZone}`} action={<span className="date-chip"><CalendarDays size={14} /> Organization time</span>} />
       <div className="toolbar" style={{ alignItems: "end", paddingTop: 0, marginBottom: 16 }}>
         <div className="toolbar-left" style={{ alignItems: "end", flexWrap: "wrap" }}>
-          <label className="field" style={{ minWidth: 160 }}><span className="field-label">From date</span><input className="text-input" type="date" value={fromDate} max={toDate || undefined} onChange={(event) => setFromDate(event.target.value)} /></label>
-          <label className="field" style={{ minWidth: 160 }}><span className="field-label">To date</span><input className="text-input" type="date" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} /></label>
+          <label className="field" style={{ minWidth: 160 }}><span className="field-label">From date</span><input className="text-input" type="date" value={fromDate} max={toDate || undefined} onChange={(event) => { setFromDate(event.target.value); setSelectedPreset(null); }} /></label>
+          <label className="field" style={{ minWidth: 160 }}><span className="field-label">To date</span><input className="text-input" type="date" value={toDate} min={fromDate || undefined} onChange={(event) => { setToDate(event.target.value); setSelectedPreset(null); }} /></label>
           <Button variant="primary" leading={<CalendarDays size={14} />} disabled={!rangeReady || !fromDate || !toDate || fromDate > toDate} onClick={applyDateRange}>{loading ? "Loading…" : "Apply custom range"}</Button>
           <div className="attendance-range-presets" role="group" aria-label="Attendance date presets">
             {[
-              { label: "Last 7 days", days: 7 },
-              { label: "Last 14 days", days: 14 },
-              { label: "Last month", months: 1 },
-              { label: "Last 3 months", months: 3 },
-              { label: "Last 6 months", months: 6 },
-            ].map((preset) => (
+              { key: "7d", label: "Last 7 days", days: 7 },
+              { key: "14d", label: "Last 14 days", days: 14 },
+              { key: "1m", label: "Last month", months: 1 },
+              { key: "3m", label: "Last 3 months", months: 3 },
+              { key: "6m", label: "Last 6 months", months: 6 },
+            ] as const).map((preset) => (
               <Button
-                key={preset.label}
+                key={preset.key}
                 size="sm"
-                variant="secondary"
+                variant={selectedPreset === preset.key ? "primary" : "secondary"}
+                aria-pressed={selectedPreset === preset.key}
                 disabled={!rangeReady}
-                onClick={() => applyAttendancePreset(preset.days, preset.months)}
+                onClick={() => { setSelectedPreset(preset.key); applyAttendancePreset(preset.days, preset.months); }}
               >
                 {preset.label}
               </Button>
