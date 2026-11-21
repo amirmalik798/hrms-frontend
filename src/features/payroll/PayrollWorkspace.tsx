@@ -11,7 +11,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest } from "@/lib/api-client";
-import { formatDate, formatMoney, humanize } from "@/lib/format";
+import { formatDate, formatMoney, getISODateInTimeZone, humanize } from "@/lib/format";
 import { buildSalarySlipDocument, type SalarySlipPayload } from "@/features/payroll/salary-slip-document";
 import { useSmartRefresh } from "@/lib/smart-refresh";
 import { useAttendanceRefresh } from "@/lib/attendance-events";
@@ -49,7 +49,8 @@ function duration(minutes: number | null | undefined) {
 
 export function PayrollWorkspace() {
   const { user, workDate, currencyCode, timeZone } = useWorkspace();
-  const [month, setMonth] = useState((workDate ?? new Date().toISOString().slice(0, 10)).slice(0, 7));
+  const organizationCalendarDate = workDate ?? getISODateInTimeZone(timeZone);
+  const [month, setMonth] = useState(organizationCalendarDate.slice(0, 7));
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [monthTouchedByUser, setMonthTouchedByUser] = useState(false);
@@ -63,7 +64,7 @@ export function PayrollWorkspace() {
   const [saving, setSaving] = useState(false);
   const canManage = user.role === "ORGANIZATION_ADMIN" || user.role === "HR_MANAGER";
   const organizationCurrencyCode = normalizeCurrencyCode(currencyCode);
-  const currentOrganizationMonth = (workDate ?? new Date().toISOString().slice(0, 10)).slice(0, 7);
+  const currentOrganizationMonth = organizationCalendarDate.slice(0, 7);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkStartMonth, setBulkStartMonth] = useState(month);
   const [bulkEndMonth, setBulkEndMonth] = useState(month);

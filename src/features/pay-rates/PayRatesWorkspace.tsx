@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { CalendarClock, CircleDollarSign, Clock3, History, Plus, Save, ShieldCheck, UserRound } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
@@ -12,7 +12,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest } from "@/lib/api-client";
 import { useSmartRefresh } from "@/lib/smart-refresh";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, formatMoney, getISODateInTimeZone } from "@/lib/format";
 import { normalizeCurrencyCode, paymentUsesOrganizationCurrency } from "@/lib/payroll-currency";
 
 interface EmployeeOption { id: string; employee_code: string; first_name: string; last_name: string; workforce_role: string; department_name?: string | null }
@@ -23,7 +23,7 @@ type RateForm = { hourlyRate: string; overtimeRate: string; effectiveFrom: strin
 const blank = (): RateForm => ({ hourlyRate: "", overtimeRate: "", effectiveFrom: "", effectiveTo: "" });
 
 export function PayRatesWorkspace() {
-  const { user, currencyCode, workDate } = useWorkspace();
+  const { user, currencyCode, workDate, timeZone } = useWorkspace();
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [employeeId, setEmployeeId] = useState("");
   const [rates, setRates] = useState<Rate[]>([]);
@@ -36,6 +36,7 @@ export function PayRatesWorkspace() {
   const [editing, setEditing] = useState<Rate | null>(null);
   const [form, setForm] = useState<RateForm>(blank);
   const [saving, setSaving] = useState(false);
+  const loadRatesSequenceRef = useRef(0);
   const current = employees.find((employee) => employee.id === employeeId);
   const organizationCurrencyCode = normalizeCurrencyCode(orgCurrency || currencyCode);
   const selectedCurrency = organizationCurrencyCode || "";
@@ -62,23 +63,30 @@ export function PayRatesWorkspace() {
   useEffect(() => { void loadEmployees(); }, [loadEmployees]);
 
   const loadRates = useCallback(async (silent = false) => {
+    const requestId = ++loadRatesSequenceRef.current;
     if (!employeeId) { setRates([]); return; }
-    if (!silent) setLoadingRates(true); setError("");
+    if (!silent) { setLoadingRates(true); setRates([]); }
+    setError("");
     try {
       const result = await apiRequest<RateResponse>(`/attendance/pay-rates?employeeId=${encodeURIComponent(employeeId)}`);
+      if (requestId !== loadRatesSequenceRef.current) return;
       setRates(result.rates ?? []);
       if (result.organizationCurrencyCode) setOrgCurrency(result.organizationCurrencyCode);
-    } catch (caught) { setRates([]); setError(caught instanceof Error ? caught.message : "Unable to load this employee’s rate history."); }
-    finally { if (!silent) setLoadingRates(false); }
+    } catch (caught) {
+      if (requestId === loadRatesSequenceRef.current) setError(caught instanceof Error ? caught.message : "Unable to load this employee’s rate history.");
+    } finally {
+      if (!silent && requestId === loadRatesSequenceRef.current) setLoadingRates(false);
+    }
   }, [employeeId]);
   useEffect(() => { void loadRates(); }, [loadRates]);
   useSmartRefresh(() => loadRates(true), Boolean(employeeId) && !open && !saving);
 
-  const activeRate = useMemo(() => rates.find((rate) => rate.effectiveFrom <= (workDate ?? new Date().toISOString().slice(0,10)) && (!rate.effectiveTo || rate.effectiveTo >= (workDate ?? new Date().toISOString().slice(0,10))) ) ?? rates[0], [rates, workDate]);
+  const organizationToday = workDate ?? getISODateInTimeZone(timeZone);
+  const activeRate = useMemo(() => rates.find((rate) => rate.effectiveFrom <= organizationToday && (!rate.effectiveTo || rate.effectiveTo >= organizationToday)), [rates, organizationToday]);
   const activeRateMatchesCurrency = Boolean(activeRate && paymentUsesOrganizationCurrency(activeRate.currencyCode, organizationCurrencyCode));
   const currencyMismatchCount = rates.filter((rate) => !paymentUsesOrganizationCurrency(rate.currencyCode, organizationCurrencyCode)).length;
   function setValue<K extends keyof RateForm>(key: K, value: RateForm[K]) { setForm((currentValue) => ({ ...currentValue, [key]: value })); }
-  function addRate() { setEditing(null); setForm({ ...blank(), effectiveFrom: workDate ?? new Date().toISOString().slice(0,10) }); setOpen(true); setError(""); }
+  function addRate() { setEditing(null); setForm({ ...blank(), effectiveFrom: organizationToday }); setOpen(true); setError(""); }
   function editRate(rate: Rate) { setEditing(rate); setForm({ hourlyRate: rate.hourlyRate, overtimeRate: rate.overtimeRate, effectiveFrom: rate.effectiveFrom, effectiveTo: rate.effectiveTo ?? "" }); setOpen(true); setError(""); }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -109,14 +117,14 @@ export function PayRatesWorkspace() {
       <PanelHeading title="Rate history" description={current ? `${current.first_name} ${current.last_name} · ${current.employee_code} · ${current.department_name || "No department"}` : "Select a workforce member to review pay-rate periods."} action={<span className="date-chip"><History size={13} /> Effective dates</span>} />
       {loadingRates ? <div className="loading-state">Loading rate history…</div> : !employeeId || !employees.length ? <div className="empty-state"><div className="state-icon"><UserRound size={18} /></div><h3>No eligible employees found</h3><p>Eligible workforce profiles will appear when available to your role.</p></div> : !rates.length ? <div className="empty-state"><div className="state-icon"><CircleDollarSign size={18} /></div><h3>No pay-rate history</h3><p>Add the first hourly and overtime rate period for this employee.</p><Button variant="primary" size="sm" onClick={addRate} leading={<Plus size={13} />}>Add rate period</Button></div> : <div className="table-wrap"><table className="data-table"><thead><tr><th>Effective period</th><th>Hourly rate</th><th>Overtime rate</th><th>Currency</th><th>Last updated</th><th /></tr></thead><tbody>{rates.map((rate) => {
         const matchesCurrency = paymentUsesOrganizationCurrency(rate.currencyCode, organizationCurrencyCode);
-        return <tr key={rate.id}><td><span className="table-primary">{formatDate(rate.effectiveFrom)}</span><span className="table-secondary">Through {rate.effectiveTo ? formatDate(rate.effectiveTo) : "Until changed"}</span></td><td>{matchesCurrency ? formatMoney(rate.hourlyRate, organizationCurrencyCode) : <span className="currency-mismatch-text">Amount withheld</span>}</td><td>{matchesCurrency ? formatMoney(rate.overtimeRate, organizationCurrencyCode) : <span className="currency-mismatch-text">Amount withheld</span>}</td><td>{matchesCurrency ? organizationCurrencyCode : <span className="currency-mismatch-text">Mismatch · {rate.currencyCode || "Unknown"}</span>}</td><td>{rate.updatedAt ? formatDate(rate.updatedAt) : "—"}</td><td><Button size="sm" variant="secondary" disabled={!matchesCurrency || saving} title={!matchesCurrency ? "This legacy period cannot be edited while its currency differs from organization settings." : undefined} onClick={() => editRate(rate)}>Edit period</Button></td></tr>;
+        return <tr key={rate.id}><td><span className="table-primary">{formatDate(rate.effectiveFrom)}</span><span className="table-secondary">Through {rate.effectiveTo ? formatDate(rate.effectiveTo) : "Until changed"}</span></td><td>{matchesCurrency ? formatMoney(rate.hourlyRate, organizationCurrencyCode) : <span className="currency-mismatch-text">Amount withheld</span>}</td><td>{matchesCurrency ? formatMoney(rate.overtimeRate, organizationCurrencyCode) : <span className="currency-mismatch-text">Amount withheld</span>}</td><td>{matchesCurrency ? organizationCurrencyCode : <span className="currency-mismatch-text">Mismatch · {rate.currencyCode || "Unknown"}</span>}</td><td>{rate.updatedAt ? formatDate(rate.updatedAt, timeZone) : "—"}</td><td><Button size="sm" variant="secondary" disabled={!matchesCurrency || saving} title={!matchesCurrency ? "This legacy period cannot be edited while its currency differs from organization settings." : undefined} onClick={() => editRate(rate)}>Edit period</Button></td></tr>;
       })}</tbody></table></div>}
       <div className="table-footer"><span>Rate history must not overlap. The backend validates effective periods and calculates monthly pay.</span><span>HRMS does not calculate authoritative salary in the browser.</span></div>
     </Panel>
-    <Drawer open={open} title={editing ? "Edit pay-rate period" : "Add pay-rate period"} description="Enter the regular and overtime hourly rates and the dates when they apply." onClose={() => setOpen(false)} width="standard" footer={<><Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" busy={saving} onClick={() => document.querySelector<HTMLFormElement>("#pay-rate-form")?.requestSubmit()} leading={<Save size={14} />}>Save rate period</Button></>}>
+    <Drawer open={open} title={editing ? "Edit pay-rate period" : "Add pay-rate period"} description="Enter the regular and overtime hourly rates and the dates when they apply." onClose={() => { if (!saving) setOpen(false); }} width="standard" footer={<><Button variant="secondary" disabled={saving} onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" busy={saving} onClick={() => document.querySelector<HTMLFormElement>("#pay-rate-form")?.requestSubmit()} leading={<Save size={14} />}>Save rate period</Button></>}>
       <form id="pay-rate-form" onSubmit={submit}>
         <div className="detail-list" style={{ marginBottom:16 }}><div><span>Employee</span><strong>{current ? `${current.first_name} ${current.last_name} · ${current.employee_code}` : "—"}</strong></div><div><span>Currency</span><strong>{selectedCurrency || "Not configured"}</strong></div></div>
-        <div className="form-grid"><Field label="Hourly rate" hint="Non-negative amount in organization currency."><TextInput required type="number" min="0" max="99999999" step="0.01" value={form.hourlyRate} onChange={(e) => setValue("hourlyRate", e.target.value)} /></Field><Field label="Overtime hourly rate" hint="Non-negative amount in organization currency."><TextInput required type="number" min="0" max="99999999" step="0.01" value={form.overtimeRate} onChange={(e) => setValue("overtimeRate", e.target.value)} /></Field><Field label="Effective from"><TextInput required type="date" value={form.effectiveFrom} onChange={(e) => setValue("effectiveFrom", e.target.value)} /></Field><Field label="Effective to" hint="Leave blank if this rate has no end date."><TextInput type="date" value={form.effectiveTo} onChange={(e) => setValue("effectiveTo", e.target.value)} /></Field></div>
+        <div className="form-grid"><Field label="Hourly rate" hint="Non-negative amount in organization currency."><TextInput disabled={saving} required type="number" min="0" max="99999999" step="0.01" value={form.hourlyRate} onChange={(e) => setValue("hourlyRate", e.target.value)} /></Field><Field label="Overtime hourly rate" hint="Non-negative amount in organization currency."><TextInput disabled={saving} required type="number" min="0" max="99999999" step="0.01" value={form.overtimeRate} onChange={(e) => setValue("overtimeRate", e.target.value)} /></Field><Field label="Effective from"><TextInput disabled={saving} required type="date" value={form.effectiveFrom} onChange={(e) => setValue("effectiveFrom", e.target.value)} /></Field><Field label="Effective to" hint="Leave blank if this rate has no end date."><TextInput disabled={saving} type="date" value={form.effectiveTo} onChange={(e) => setValue("effectiveTo", e.target.value)} /></Field></div>
         <div className="form-note"><ShieldCheck size={15} /> The backend rejects overlapping periods, currency changes across an employee’s history, and rates assigned to ineligible workforce records. Legacy currency mismatches are shown without amounts and require an approved data-maintenance process.</div>
       </form>
     </Drawer>
