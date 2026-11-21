@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Activity, AlertCircle, ArrowDownToLine, CalendarDays, CheckCircle2, Clock3, FileBarChart, FileClock, Mail, RefreshCw, ShieldCheck, Wallet } from "lucide-react";
+import { Activity, AlertCircle, ArrowDownToLine, CalendarDays, CheckCircle2, Clock3, FileBarChart, FileClock, Mail, ShieldCheck, Wallet } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
 import { Panel, PanelHeading } from "@/components/ui/Panel";
@@ -10,6 +10,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { apiRequest, isRecord, pickArray, stringValue } from "@/lib/api-client";
 import { formatDate, getLocalISODate, humanize } from "@/lib/format";
 import { routePageMeta } from "@/lib/workspace-config";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 
 interface ResourceConfig { endpoint: string; keys: string[]; description?: string; secondary?: { endpoint: string; keys: string[]; label: string } }
 const configs: Record<string, (role: string) => ResourceConfig | null> = {
@@ -37,9 +38,9 @@ export function ResourceWorkspace({ pageKey }: { pageKey: string }) {
   const [tab, setTab] = useState<"primary" | "secondary">("primary");
   const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
 
-  const load = useCallback(async () => {
-    if (!config) { setLoading(false); return; }
-    setLoading(true); setError(""); setSecondaryError("");
+  const load = useCallback(async (silent = false) => {
+    if (!config) { if (!silent) setLoading(false); return; }
+    if (!silent) setLoading(true); setError(""); setSecondaryError("");
     try {
       const result = await apiRequest<unknown>(config.endpoint);
       setRecords(pickArray(result, ...config.keys));
@@ -50,9 +51,10 @@ export function ResourceWorkspace({ pageKey }: { pageKey: string }) {
         } catch (caught) { setSecondaryError(caught instanceof Error ? caught.message : "Unable to load this section."); }
       } else setSecondaryRecords([]);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load this workspace data."); }
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   }, [config]);
   useEffect(() => { void load(); }, [load]);
+  useSmartRefresh(() => load(true), Boolean(config) && !detail);
 
   const visibleRecords = useMemo(() => {
     const source = tab === "secondary" ? secondaryRecords : records;
@@ -71,12 +73,12 @@ export function ResourceWorkspace({ pageKey }: { pageKey: string }) {
   const activeError = tab === "secondary" ? secondaryError : error;
 
   return <>
-    <PageHeader eyebrow={groupLabel(pageKey)} title={meta.title} description={meta.description} action={<Button variant="secondary" leading={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>Refresh</Button>} />
+    <PageHeader eyebrow={groupLabel(pageKey)} title={meta.title} description={meta.description} />
     <Panel>
       {config.secondary ? <div style={{ display: "flex", gap: 5, padding: "12px 18px 0" }}><button type="button" className={`button ${tab === "primary" ? "button-primary" : "button-ghost"} button-sm`} onClick={() => setTab("primary")}>{meta.title}</button><button type="button" className={`button ${tab === "secondary" ? "button-primary" : "button-ghost"} button-sm`} onClick={() => setTab("secondary")}>{config.secondary.label}</button></div> : null}
       <div className="toolbar"><div className="toolbar-left"><label className="search-field"><SearchIcon /><input placeholder={`Search ${title.toLowerCase()}…`} aria-label={`Search ${title}`} value={query} onChange={(e) => setQuery(e.target.value)} /></label></div><span style={{ fontSize: 11, color: "var(--muted)" }}>{loading ? "Loading…" : `${rows.length} records`}</span></div>
       {loading && !rows.length ? <div style={{ padding: 20, display: "grid", gap: 12 }}>{[1,2,3,4].map((n) => <div className="skeleton" key={n} style={{ height: 48 }} />)}</div> : null}
-      {!loading && activeError ? <div className="error-state"><div className="state-icon"><AlertCircle size={18} /></div><h3>Unable to load {title.toLowerCase()}</h3><p>{activeError}</p><Button onClick={() => void load()}>Try again</Button></div> : null}
+      {!loading && activeError ? <div className="error-state"><div className="state-icon"><AlertCircle size={18} /></div><h3>Unable to load {title.toLowerCase()}</h3><p>{activeError} This section will retry automatically.</p></div> : null}
       {!loading && !activeError && !rows.length ? <div className="empty-state"><div className="state-icon"><FileBarChart size={18} /></div><h3>{query ? "No matching records" : `No ${title.toLowerCase()} records`}</h3><p>{query ? "Try another search term." : "When the backend has records available to this role, they will appear here."}</p></div> : null}
       {rows.length ? <div className="table-wrap"><table className="data-table"><thead><tr>{columns.map((column) => <th key={column}>{labelFor(column)}</th>)}<th><span className="sr-only">Details</span></th></tr></thead><tbody>{rows.map((record, index) => <tr key={stringValue(record, "id") || index} onClick={() => setDetail(record)} style={{ cursor: "pointer" }}>{columns.map((column) => <td key={column}>{renderCell(record[column], column, record, timeZone, currencyCode)}</td>)}<td><span style={{ color: "var(--accent-strong)", fontSize: 11 }}>View</span></td></tr>)}</tbody></table></div> : null}
     </Panel>

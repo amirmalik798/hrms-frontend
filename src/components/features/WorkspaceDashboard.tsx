@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Activity, AlertCircle, ArrowRight, ArrowUpRight, Building2, CalendarClock, CheckCircle2, Clock3, FileClock, Mail, RefreshCw, ShieldCheck, Users, Wallet } from "lucide-react";
+import { Activity, AlertCircle, ArrowRight, ArrowUpRight, Building2, CalendarClock, CheckCircle2, Clock3, FileClock, Mail, ShieldCheck, Users, Wallet } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
 import { Panel, PanelHeading } from "@/components/ui/Panel";
@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { apiRequest, isRecord, pickArray, stringValue, numberValue } from "@/lib/api-client";
 import { formatDate, formatNumber, humanize } from "@/lib/format";
 import { roleLabels } from "@/lib/workspace-config";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 import { notifyAttendanceStatusChanged, useAttendanceRefresh } from "@/lib/attendance-events";
 import type { WorkspaceRole } from "@/types/workspace";
 
@@ -37,8 +38,8 @@ export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true); setError("");
     try {
       let result: DashboardData;
       if (role === "ORGANIZATION_ADMIN") {
@@ -58,11 +59,12 @@ export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
       setData(result);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to load your overview.");
-    } finally { setLoading(false); }
+    } finally { if (!silent) setLoading(false); }
   }, [role]);
 
   useEffect(() => { void load(); }, [load]);
-  useAttendanceRefresh(() => { void load(); });
+  useSmartRefresh(() => load(true));
+  useAttendanceRefresh(() => { void load(true); });
 
   const stats = data?.stats ?? {};
   const team = data?.team ?? {};
@@ -98,13 +100,13 @@ export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
   const description = role === "EMPLOYEE" ? "A quick view of your day, your time, and what needs your attention." : role === "DEPARTMENT_MANAGER" ? "Stay close to your assigned teams and the work that needs review." : role === "HR_MANAGER" ? "Understand workforce health and move the important work forward." : "Understand the health of your workforce and organization setup.";
 
   return <>
-    <PageHeader eyebrow={roleLabels[role]} title={heading} description={description} action={<Button variant="secondary" leading={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>Refresh</Button>} />
+    <PageHeader eyebrow={roleLabels[role]} title={heading} description={description} />
     <div className="dashboard-intro" style={{ marginBottom: 18 }}>
       <div><h2>{role === "EMPLOYEE" ? `Welcome to your workspace` : `Good ${new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}`}, {user.displayName || roleLabels[role]}.</h2><p>{role === "EMPLOYEE" ? "Your personal work information is all in one place." : `Here is the latest view from ${user.organizationName}.`}</p></div>
       <span className="date-chip"><CalendarClock size={14} /> {formatDate(data?.workDate ?? new Date().toISOString(), timeZone)}</span>
     </div>
 
-    {error ? <div className="error-state panel" style={{ marginBottom: 18 }}><div className="state-icon"><AlertCircle size={19} /></div><h3>We could not load this overview</h3><p>{error}</p><Button variant="secondary" leading={<RefreshCw size={14} />} onClick={() => void load()}>Try again</Button></div> : null}
+    {error ? <div className="error-state panel" style={{ marginBottom: 18 }}><div className="state-icon"><AlertCircle size={19} /></div><h3>We could not load this overview</h3><p>{error} The workspace will retry automatically.</p></div> : null}
 
     <div className="page-grid grid-4" style={{ marginBottom: 18 }}>
       {metrics.map((metric) => { const Icon = metric.icon; return <Panel key={metric.label} className="metric-card"><div className="metric-label"><span>{metric.label}</span><span className="metric-icon"><Icon size={16} /></span></div><div className="metric-value">{loading ? <span className="skeleton" style={{ display: "inline-block", width: 76, height: 30 }} /> : typeof metric.value === "number" ? formatNumber(metric.value) : metric.value ?? "—"}</div><div className="metric-foot">{metric.note}</div></Panel>; })}
