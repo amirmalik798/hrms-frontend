@@ -270,21 +270,37 @@ export function PayrollWorkspace() {
     }
   }
 
-  async function loadIndividualSlip() {
-    if (!slipTarget || slipLoading || slipPrinting) return;
-    setSlipLoading(true); setSlipError(""); setSlipPayload(null);
-    try {
-      const count = validatePayslipRange(slipStartMonth, slipEndMonth, currentOrganizationMonth);
-      const params = new URLSearchParams({ startMonth: slipStartMonth, endMonth: slipEndMonth });
-      const result = await apiRequest<SalarySlipPayload>(`/payroll/payslips/${encodeURIComponent(slipTarget.employeeId)}?${params.toString()}`);
-      if (!result.employee || result.employee.id !== slipTarget.employeeId || result.startMonth !== slipStartMonth || result.endMonth !== slipEndMonth || !Array.isArray(result.months) || result.months.length !== count) {
-        throw new Error("The individual salary-slip response was incomplete or did not match the selected month range.");
+  // Load the individual salary slip automatically on open and whenever either
+  // month changes. Cleanup prevents an older, slower response from replacing
+  // the data for a newer selection.
+  useEffect(() => {
+    if (!slipTarget) return;
+    let active = true;
+    setSlipLoading(true);
+    setSlipError("");
+    setSlipPayload(null);
+
+    async function loadSelectedSlipPeriod() {
+      try {
+        const count = validatePayslipRange(slipStartMonth, slipEndMonth, currentOrganizationMonth);
+        const params = new URLSearchParams({ startMonth: slipStartMonth, endMonth: slipEndMonth });
+        const result = await apiRequest<SalarySlipPayload>(`/payroll/payslips/${encodeURIComponent(slipTarget.employeeId)}?${params.toString()}`);
+        if (!active) return;
+        if (!result.employee || result.employee.id !== slipTarget.employeeId || result.startMonth !== slipStartMonth || result.endMonth !== slipEndMonth || !Array.isArray(result.months) || result.months.length !== count) {
+          throw new Error("The individual salary-slip response was incomplete or did not match the selected month range.");
+        }
+        assertSalarySlipUsesOrganizationCurrency(result, organizationCurrencyCode);
+        setSlipPayload(result);
+      } catch (caught) {
+        if (active) setSlipError(caught instanceof Error ? caught.message : "Unable to load the individual salary slip.");
+      } finally {
+        if (active) setSlipLoading(false);
       }
-      assertSalarySlipUsesOrganizationCurrency(result, organizationCurrencyCode);
-      setSlipPayload(result);
-    } catch (caught) { setSlipError(caught instanceof Error ? caught.message : "Unable to load the individual salary slip."); }
-    finally { setSlipLoading(false); }
-  }
+    }
+
+    void loadSelectedSlipPeriod();
+    return () => { active = false; };
+  }, [slipTarget, slipStartMonth, slipEndMonth, currentOrganizationMonth, organizationCurrencyCode]);
 
   async function printIndividualSlip() {
     if (!slipTarget || slipPrinting || slipLoading) return;
@@ -300,7 +316,7 @@ export function PayrollWorkspace() {
       const params = new URLSearchParams({ startMonth: slipStartMonth, endMonth: slipEndMonth });
       const latest = await apiRequest<SalarySlipPayload>(`/payroll/payslips/${encodeURIComponent(slipTarget.employeeId)}?${params.toString()}`);
       const count = monthOrdinal(slipEndMonth) - monthOrdinal(slipStartMonth) + 1;
-      if (!latest.employee || latest.employee.id !== slipTarget.employeeId || latest.startMonth !== slipStartMonth || latest.endMonth !== slipEndMonth || !Array.isArray(latest.months) || latest.months.length !== count) throw new Error("The latest salary-slip data was incomplete. Reload the selected period and try again.");
+      if (!latest.employee || latest.employee.id !== slipTarget.employeeId || latest.startMonth !== slipStartMonth || latest.endMonth !== slipEndMonth || !Array.isArray(latest.months) || latest.months.length !== count) throw new Error("The latest salary-slip data was incomplete. Adjust the selected month range and try again.");
       assertSalarySlipUsesOrganizationCurrency(latest, organizationCurrencyCode);
       if (!printWindow.closed) {
         printWindow.document.open(); printWindow.document.write(buildSalarySlipDocument(latest)); printWindow.document.close();
@@ -418,7 +434,22 @@ export function PayrollWorkspace() {
     {user.role === "EMPLOYEE" ? <div style={{ marginTop: 16 }}><PersonalEarningsWorkspace embedded monthOverride={month} /></div> : null}
     <Drawer open={Boolean(selected)} title={targetStatus === "PAID" ? "Record salary as paid" : "Reverse paid status"} description="Review the employee, amount, currency, and period before recording a payment status change." onClose={() => setSelected(null)} width="standard" footer={<><Button variant="secondary" onClick={() => setSelected(null)}>Cancel</Button><Button variant={targetStatus === "PAID" ? "primary" : "danger"} busy={saving} onClick={() => document.querySelector<HTMLFormElement>("#salary-payment-form")?.requestSubmit()}>{targetStatus === "PAID" ? "Confirm paid status" : "Confirm reversal"}</Button></>}>
       {selected ? <form id="salary-payment-form" onSubmit={savePayment}>
-        <div className="detail-list" style={{ marginBottom:17 }}><div><span>Employee</span><strong>{selected.firstName} {selected.lastName} · {selected.employeeCode}</strong></div><div><span>Pay period</span><strong>{month}</strong></div><div><span>Calculated payable amount</span><strong style={{ fontSize:18 }}>{formatMoney(selected.calculatedAmount, organizationCurrencyCode)}</strong></div><div><span>Worked hours</span><strong>{duration(selected.workedMinutes)}</strong></div><div><span>New status</span><strong>{targetStatus === "PAID" ? "Paid" : "Unpaid"}</strong></div></div>
+        <section className="payment-review-summary" aria-label="Payment confirmation summary">
+          <div className="payment-review-employee">
+            <ProfilePhoto name={`${selected.firstName || ""} ${selected.lastName || ""}`.trim() || "Workforce member"} employeeId={selected.employeeId} className="user-avatar" />
+            <div className="payment-review-employee-copy">
+              <span>Workforce member</span>
+              <strong>{selected.firstName} {selected.lastName}</strong>
+              <small>{selected.employeeCode || "Employee code unavailable"}</small>
+            </div>
+          </div>
+          <div className="payment-review-grid">
+            <div><span>Pay period</span><strong>{month}</strong></div>
+            <div><span>Worked hours</span><strong>{duration(selected.workedMinutes)}</strong></div>
+            <div className="payment-review-amount"><span>Calculated payable amount</span><strong>{formatMoney(selected.calculatedAmount, organizationCurrencyCode)}</strong></div>
+            <div><span>New status</span><div className="payment-review-status"><StatusBadge value={targetStatus} /></div></div>
+          </div>
+        </section>
         <Field label="Payment reference" hint="Optional · up to 120 characters"><TextInput maxLength={120} value={reference} onChange={(e) => setReference(e.target.value)} /></Field>
         <Field label="Notes" hint="Optional · up to 1,000 characters"><TextArea maxLength={1000} rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
         <div className="form-note"><AlertCircle size={15} /> This records the payment state only. Confirm that the actual payment has been made outside HRMS before marking it paid.</div>
@@ -455,8 +486,35 @@ export function PayrollWorkspace() {
         {teamSlipError ? <div role="alert" className="form-error">{teamSlipError}</div> : null}
       </div> : null}
     </Drawer>
-    <Drawer open={Boolean(slipTarget)} title="Generate individual salary slip" description="Choose the statement period. The latest attendance, approved overtime, effective pay rates, paid leave and payment ledger status are reloaded before printing." onClose={() => { if (!slipLoading && !slipPrinting) { setSlipTarget(null); setSlipPayload(null); setSlipError(""); } }} width="standard" footer={<><Button variant="secondary" disabled={slipLoading || slipPrinting} onClick={() => { setSlipTarget(null); setSlipPayload(null); }}>Cancel</Button><Button variant="secondary" busy={slipLoading} disabled={slipPrinting} onClick={() => void loadIndividualSlip()}>Load selected period</Button><Button variant="primary" leading={<FileDown size={14} />} busy={slipPrinting} disabled={!slipPayload || slipLoading} onClick={() => void printIndividualSlip()}>Generate & print</Button></>}>
-      {slipTarget ? <div className="form-section"><div className="detail-list"><div><span>Workforce member</span><strong>{slipTarget.firstName} {slipTarget.lastName} · {slipTarget.employeeCode}</strong></div><div><span>Department</span><strong>{slipTarget.departmentName || "—"}</strong></div></div><div className="form-grid"><Field label="From month"><TextInput type="month" min="2000-01" max={slipEndMonth || currentOrganizationMonth} value={slipStartMonth} disabled={slipLoading || slipPrinting} onChange={(event) => { setSlipStartMonth(event.target.value); setSlipPayload(null); setSlipError(""); }} /></Field><Field label="To month"><TextInput type="month" min={slipStartMonth || "2000-01"} max={currentOrganizationMonth} value={slipEndMonth} disabled={slipLoading || slipPrinting} onChange={(event) => { setSlipEndMonth(event.target.value); setSlipPayload(null); setSlipError(""); }} /></Field></div>{slipError ? <div className="form-error" role="alert">{slipError}</div> : null}{slipPayload ? <div className="success-callout"><CheckCircle2 size={15} /> Loaded {slipPayload.months.length} monthly statement(s) for {slipPayload.employee.firstName} {slipPayload.employee.lastName}. The print action reloads the latest payroll data.</div> : <div className="form-note"><AlertCircle size={15} /> Each selected month is printed as a separate monthly statement. Up to 24 months can be included.</div>}</div> : null}
+    <Drawer open={Boolean(slipTarget)} title="Generate individual salary slip" description="Choose the statement period. The latest payroll details load automatically whenever either selected month changes and are refreshed again before printing." onClose={() => { if (!slipLoading && !slipPrinting) { setSlipTarget(null); setSlipPayload(null); setSlipError(""); } }} width="standard" footer={<><Button variant="secondary" disabled={slipLoading || slipPrinting} onClick={() => { setSlipTarget(null); setSlipPayload(null); }}>Cancel</Button><Button variant="primary" leading={<FileDown size={14} />} busy={slipPrinting} disabled={!slipPayload || slipLoading} onClick={() => void printIndividualSlip()}>Generate & print</Button></>}>
+      {slipTarget ? <div className="form-section">
+        <section className="salary-slip-person-card" aria-label="Selected workforce member">
+          <div className="salary-slip-person-identity">
+            <ProfilePhoto name={`${slipTarget.firstName} ${slipTarget.lastName}`.trim()} employeeId={slipTarget.employeeId} className="user-avatar" />
+            <div className="salary-slip-person-name">
+              <span>Workforce member</span>
+              <strong>{slipTarget.firstName} {slipTarget.lastName}</strong>
+              <small>{slipTarget.employeeCode || "Employee code unavailable"}</small>
+            </div>
+          </div>
+          <div className="salary-slip-person-meta">
+            <div><span>Department</span><strong>{slipTarget.departmentName || "Not assigned"}</strong></div>
+            <div><span>Organization currency</span><strong>{organizationCurrencyCode || "Unavailable"}</strong></div>
+          </div>
+        </section>
+        <section className="salary-slip-period" aria-label="Payslip date range">
+          <div className="salary-slip-period-heading">
+            <strong>Statement period</strong>
+            <span>Choose inclusive start and end months</span>
+          </div>
+          <div className="salary-slip-month-grid">
+            <Field label="From month"><TextInput type="month" min="2000-01" max={slipEndMonth || currentOrganizationMonth} value={slipStartMonth} disabled={slipLoading || slipPrinting} onChange={(event) => { setSlipStartMonth(event.target.value); setSlipPayload(null); setSlipError(""); }} /></Field>
+            <Field label="To month"><TextInput type="month" min={slipStartMonth || "2000-01"} max={currentOrganizationMonth} value={slipEndMonth} disabled={slipLoading || slipPrinting} onChange={(event) => { setSlipEndMonth(event.target.value); setSlipPayload(null); setSlipError(""); }} /></Field>
+          </div>
+        </section>
+        {slipError ? <div className="form-error" role="alert">{slipError}</div> : null}
+        {slipLoading ? <div className="salary-slip-loading-note" role="status"><CalendarDays size={16} /><span>Loading the selected payroll period…</span></div> : slipPayload ? <div className="success-callout"><CheckCircle2 size={15} /> Loaded {slipPayload.months.length} monthly statement(s) for {slipPayload.employee.firstName} {slipPayload.employee.lastName}. The print action refreshes the latest payroll data.</div> : !slipError ? <div className="form-note"><AlertCircle size={15} /> Each selected month is printed as a separate monthly statement. Up to 24 months can be included.</div> : null}
+      </div> : null}
     </Drawer>
   </>;
 }
