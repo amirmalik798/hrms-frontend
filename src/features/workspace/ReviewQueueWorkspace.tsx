@@ -17,7 +17,7 @@ import { useSmartRefresh } from "@/lib/smart-refresh";
 
 interface QueueItem extends Record<string, unknown> {
   id?: string; status?: string; firstName?: string; lastName?: string; employeeCode?: string;
-  workDate?: string; createdAt?: string; requestType?: string; eventType?: string; reason?: string;
+  workDate?: string; createdAt?: string; requestedAt?: string; originalRecordedAt?: string | null; timeZone?: string; reviewedAt?: string | null; requestType?: string; eventType?: string; reason?: string;
   requestedMinutes?: number; approvedMinutes?: number; employeeId?: string; reviewerNote?: string;
   excessMinutes?: number; scheduledEnd?: string; actualClockOut?: string;
 }
@@ -30,6 +30,23 @@ const endpoint: Record<QueueType, { path: string; keys: string[]; label: string 
   excess: { path: "/attendance/excess-overtime", keys: ["cases", "reviews", "requests", "items"], label: "Excess time" },
 };
 
+function formatDateTime(value: string | null | undefined, timeZone: string) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hour12: true, timeZone,
+    }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hour12: true,
+    }).format(date);
+  }
+}
+
 function dateOffset(date: string, amount: number) {
   const value = new Date(`${date}T12:00:00Z`);
   value.setUTCDate(value.getUTCDate() + amount);
@@ -37,15 +54,16 @@ function dateOffset(date: string, amount: number) {
 }
 
 export function ReviewQueueWorkspace() {
-  const { user, workDate } = useWorkspace();
+  const { user, workDate, timeZone } = useWorkspace();
   const authoritativeDate = workDate || getLocalISODate();
   const excessFromDate = dateOffset(authoritativeDate, -30);
   const excessToDate = dateOffset(authoritativeDate, 30);
-  const available = useMemo<QueueType[]>(() => user.role === "DEPARTMENT_MANAGER" ? ["corrections", "overtime", "excess"] : ["corrections", "overtime", "excess"], [user.role]);
+  const available: QueueType[] = ["corrections", "overtime", "excess"];
   const [active, setActive] = useState<QueueType>("corrections");
   const [items, setItems] = useState<Record<QueueType, QueueItem[]>>({ corrections: [], overtime: [], excess: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [queueErrors, setQueueErrors] = useState<Partial<Record<QueueType, string>>>({});
   const [selected, setSelected] = useState<QueueItem | null>(null);
   const [decision, setDecision] = useState<DecisionKind>("approve");
   const [reviewerNote, setReviewerNote] = useState("");
@@ -66,11 +84,13 @@ export function ReviewQueueWorkspace() {
     }));
     const next = { corrections: [], overtime: [], excess: [] } as Record<QueueType, QueueItem[]>;
     const errors: string[] = [];
+    const nextErrors: Partial<Record<QueueType, string>> = {};
     for (const [key, value] of results) {
       if (Array.isArray(value)) next[key] = value as QueueItem[];
-      else errors.push(`${endpoint[key].label}: ${value.error}`);
+      else { nextErrors[key] = value.error; errors.push(`${endpoint[key].label}: ${value.error}`); }
     }
     setItems(next);
+    setQueueErrors(nextErrors);
     if (errors.length) setError(errors.join(" · "));
     if (!silent) setLoading(false);
   }, [available, excessFromDate, excessToDate]);
@@ -78,6 +98,7 @@ export function ReviewQueueWorkspace() {
   useSmartRefresh(() => load(true), !selected && !saving);
   useAttendanceRefresh(() => { void load(true); });
   const selectedItems = items[active];
+  const activeError = queueErrors[active];
   const pendingCount = selectedItems.filter((item) => ["PENDING", "OPEN"].includes(String(item.status ?? "").toUpperCase())).length;
 
   function openDecision(item: QueueItem, kind: DecisionKind) {
@@ -120,16 +141,17 @@ export function ReviewQueueWorkspace() {
         })}
       </div>
       {loading && !selectedItems.length ? <div className="loading-state">Loading review items…</div> : null}
-      {!loading && !selectedItems.length ? <div className="empty-state"><div className="state-icon"><CheckCircle2 size={19} /></div><h3>Nothing waiting here</h3><p>There are no {endpoint[active].label.toLowerCase()} currently waiting for review in your authorized scope.</p></div> : null}
-      {selectedItems.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Employee</th><th>Request</th><th>Work date</th><th>Submitted</th><th>Status</th><th /></tr></thead><tbody>
+      {!loading && !selectedItems.length && activeError ? <div className="error-state" role="alert"><div className="state-icon"><AlertCircle size={18} /></div><h3>{endpoint[active].label} could not be loaded</h3><p>{activeError} This section will retry automatically.</p></div> : null}
+      {!loading && !selectedItems.length && !activeError ? <div className="empty-state"><div className="state-icon"><CheckCircle2 size={19} /></div><h3>Nothing waiting here</h3><p>There are no {endpoint[active].label.toLowerCase()} currently waiting for review in your authorized scope.</p></div> : null}
+      {selectedItems.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Employee</th><th>Request</th><th>Work date</th><th>{active === "excess" ? "Time details" : "Submitted"}</th><th>Status</th><th /></tr></thead><tbody>
         {selectedItems.map((item, index) => {
           const own = item.employeeId === user.employeeId;
           const pending = ["PENDING", "OPEN"].includes(String(item.status ?? "").toUpperCase());
           return <tr key={String(item.id ?? index)}>
             <td><div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}><ProfilePhoto employeeId={typeof item.employeeId === "string" ? item.employeeId : null} currentUser={typeof item.employeeId === "string" && item.employeeId === user.employeeId} name={`${stringValue(item, "firstName", "employeeName", "employee_name") || "Employee"} ${stringValue(item, "lastName")}`.trim()} className="user-avatar" /><span style={{ minWidth: 0 }}><span className="table-primary">{`${stringValue(item, "firstName", "employeeName", "employee_name") || "Employee"} ${stringValue(item, "lastName")}`.trim()}</span><span className="table-secondary">{stringValue(item, "employeeCode", "employee_code")}</span></span></div></td>
-            <td><span className="table-primary">{active === "excess" ? `${Number(item.excessMinutes ?? 0)} excess minutes` : humanize(stringValue(item, "leaveType", "eventType", "requestType", "type") || endpoint[active].label)}</span><span className="table-secondary">{stringValue(item, "reason", "requestedNote", "reviewerNote")}</span></td>
-            <td>{formatDate(stringValue(item, "workDate", "work_date", "startDate", "start_date"))}</td>
-            <td>{formatDate(stringValue(item, "createdAt", "created_at"))}</td>
+            <td><span className="table-primary">{active === "excess" ? `${Number(item.excessMinutes ?? 0)} excess minutes` : humanize(stringValue(item, "leaveType", "eventType", "requestType", "type") || endpoint[active].label)}</span><span className="table-secondary">{active === "corrections" && stringValue(item, "requestedAt") ? `Proposed ${formatDateTime(stringValue(item, "requestedAt"), timeZone)}${stringValue(item, "originalRecordedAt") ? ` · Original ${formatDateTime(stringValue(item, "originalRecordedAt"), timeZone)}` : ""} · ` : ""}{stringValue(item, "reason", "requestedNote", "reviewerNote")}</span></td>
+            <td>{formatDate(stringValue(item, "workDate", "work_date", "startDate", "start_date"), timeZone)}</td>
+            <td>{active === "excess" ? <><span className="table-primary">Scheduled end: {formatDateTime(stringValue(item, "scheduledEnd"), timeZone)}</span><span className="table-secondary">Actual clock-out: {formatDateTime(stringValue(item, "actualClockOut"), timeZone)}</span></> : formatDateTime(stringValue(item, "createdAt", "created_at", "requestedAt", "requested_at"), timeZone)}</td>
             <td><StatusBadge value={item.status ?? "PENDING"} /></td>
             <td><div style={{ display: "flex", justifyContent: "flex-end", gap: 5 }}>
               {pending && !own && active !== "excess" ? <><Button size="sm" variant="secondary" leading={<CheckCircle2 size={13} />} onClick={() => openDecision(item, "approve")}>Approve</Button><Button size="sm" variant="ghost" leading={<XCircle size={13} />} onClick={() => openDecision(item, "reject")}>Reject</Button></> : null}
@@ -141,9 +163,9 @@ export function ReviewQueueWorkspace() {
       </tbody></table></div> : null}
       {!loading && selectedItems.length ? <div className="table-footer"><span>{selectedItems.length} records · {pendingCount} open/pending</span><span>Decisions are validated by the backend against the active role and assigned-department scope.</span></div> : null}
     </Panel>
-    <Drawer open={Boolean(selected)} title={active === "excess" ? "Review excess time" : `${decision === "approve" ? "Approve" : "Reject"} ${endpoint[active].label.toLowerCase()}`} description="Review the employee, date, and reason before recording your decision." onClose={() => setSelected(null)} width="standard" footer={<><Button variant="secondary" onClick={() => setSelected(null)}>Cancel</Button><Button variant={decision === "reject" || decision === "follow-up" ? "danger" : "primary"} busy={saving} onClick={() => document.querySelector<HTMLFormElement>("#queue-decision-form")?.requestSubmit()}>{decision === "approve" ? "Approve request" : decision === "reject" ? "Reject request" : decision === "reviewed" ? "Mark as reviewed" : "Record follow-up"}</Button></>}>
+    <Drawer open={Boolean(selected)} title={active === "excess" ? "Review excess time" : `${decision === "approve" ? "Approve" : "Reject"} ${endpoint[active].label.toLowerCase()}`} description="Review the employee, date, and reason before recording your decision." onClose={() => { if (!saving) setSelected(null); }} width="standard" footer={<><Button variant="secondary" disabled={saving} onClick={() => setSelected(null)}>Cancel</Button><Button variant={decision === "reject" || decision === "follow-up" ? "danger" : "primary"} busy={saving} onClick={() => document.querySelector<HTMLFormElement>("#queue-decision-form")?.requestSubmit()}>{decision === "approve" ? "Approve request" : decision === "reject" ? "Reject request" : decision === "reviewed" ? "Mark as reviewed" : "Record follow-up"}</Button></>}>
       {selected ? <form id="queue-decision-form" onSubmit={submitDecision}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}><ProfilePhoto employeeId={typeof selected.employeeId === "string" ? selected.employeeId : null} name={`${stringValue(selected, "firstName", "employeeName", "employee_name")} ${stringValue(selected, "lastName")}`.trim() || "Employee"} /><strong style={{ color: "var(--text-strong)", fontSize: 13 }}>{`${stringValue(selected, "firstName", "employeeName", "employee_name")} ${stringValue(selected, "lastName")}`.trim() || "Employee"}</strong></div><div className="detail-list" style={{ marginBottom: 18 }}><div><span>Date</span><strong>{formatDate(stringValue(selected, "workDate", "work_date"))}</strong></div><div><span>Request</span><strong>{humanize(stringValue(selected, "eventType", "requestType", "type") || endpoint[active].label)}</strong></div>{typeof selected.requestedMinutes === "number" ? <div><span>Requested duration</span><strong>{Math.floor(selected.requestedMinutes / 60)}h {selected.requestedMinutes % 60}m</strong></div> : null}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}><ProfilePhoto employeeId={typeof selected.employeeId === "string" ? selected.employeeId : null} name={`${stringValue(selected, "firstName", "employeeName", "employee_name")} ${stringValue(selected, "lastName")}`.trim() || "Employee"} /><strong style={{ color: "var(--text-strong)", fontSize: 13 }}>{`${stringValue(selected, "firstName", "employeeName", "employee_name")} ${stringValue(selected, "lastName")}`.trim() || "Employee"}</strong></div><div className="detail-list" style={{ marginBottom: 18 }}><div><span>Date</span><strong>{formatDate(stringValue(selected, "workDate", "work_date"), timeZone)}</strong></div><div><span>Request</span><strong>{humanize(stringValue(selected, "eventType", "requestType", "type") || endpoint[active].label)}</strong></div>{typeof selected.requestedMinutes === "number" ? <div><span>Requested duration</span><strong>{Math.floor(selected.requestedMinutes / 60)}h {selected.requestedMinutes % 60}m</strong></div> : null}{typeof selected.approvedMinutes === "number" ? <div><span>Approved duration</span><strong>{Math.floor(selected.approvedMinutes / 60)}h {selected.approvedMinutes % 60}m</strong></div> : null}{active === "corrections" && selected.originalRecordedAt ? <div><span>Original punch</span><strong>{formatDateTime(selected.originalRecordedAt, selected.timeZone || timeZone)}</strong></div> : null}{active === "corrections" && selected.requestedAt ? <div><span>Requested correction</span><strong>{formatDateTime(selected.requestedAt, selected.timeZone || timeZone)}</strong></div> : null}{active === "excess" ? <><div><span>Scheduled end</span><strong>{formatDateTime(selected.scheduledEnd, timeZone)}</strong></div><div><span>Actual clock-out</span><strong>{formatDateTime(selected.actualClockOut, timeZone)}</strong></div><div><span>Excess time</span><strong>{Math.floor(Number(selected.excessMinutes ?? 0) / 60)}h {Number(selected.excessMinutes ?? 0) % 60}m</strong></div></> : null}</div>
         {actionError ? <div role="alert" className="form-error">{actionError}</div> : null}
         <Field label={decision === "reject" ? "Reason for rejection" : decision === "follow-up" ? "Follow-up note" : "Reviewer note (optional)"} hint={decision === "reject" ? "Required · up to 500 characters" : decision === "follow-up" ? "Required · up to 500 characters" : "Optional · up to 500 characters"}><TextArea maxLength={500} required={decision === "reject" || decision === "follow-up"} value={reviewerNote} onChange={(event) => setReviewerNote(event.target.value)} placeholder="Add context for the employee…" /></Field>
         {active === "excess" ? <div className="form-note"><ShieldAlert size={15} /> Excess time that was not approved in advance remains unpaid. This review does not authorize payment.</div> : null}
