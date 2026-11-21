@@ -212,7 +212,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
           <label className="field" style={{ minWidth: 160 }}><span className="field-label">To date</span><input className="text-input" type="date" value={toDate} min={fromDate || undefined} onChange={(event) => { setToDate(event.target.value); setSelectedPreset(null); }} /></label>
           <Button variant="primary" leading={<CalendarDays size={14} />} disabled={!rangeReady || !fromDate || !toDate || fromDate > toDate} onClick={applyDateRange}>{loading ? "Loading…" : "Apply custom range"}</Button>
           <div className="attendance-range-presets" role="group" aria-label="Attendance date presets">
-            {[
+            {([
               { key: "7d", label: "Last 7 days", days: 7 },
               { key: "14d", label: "Last 14 days", days: 14 },
               { key: "1m", label: "Last month", months: 1 },
