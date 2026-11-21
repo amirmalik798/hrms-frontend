@@ -11,6 +11,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest } from "@/lib/api-client";
 import { formatDate, humanize } from "@/lib/format";
+import { useAttendanceRefresh } from "@/lib/attendance-events";
 
 interface ReportTarget { employeeId: string; employeeCode: string; firstName: string; lastName: string; departmentName: string | null; workforceRole: string; employmentStatus: string }
 interface ReportEntry { workDate: string; scheduleName: string | null; status: string; firstClockIn: string | null; lastClockOut: string | null; workedMinutes: number; regularWorkedMinutes: number; payableOvertimeMinutes: number; excessUnapprovedOvertimeMinutes: number }
@@ -100,6 +101,8 @@ export function ReportsWorkspace() {
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to generate this attendance report."); }
     finally { setGenerating(false); }
   }
+
+  useAttendanceRefresh(() => { if (report) void generate(); });
 
   async function downloadPdf() {
     setDownloading(true); setError(""); setNotice("");
