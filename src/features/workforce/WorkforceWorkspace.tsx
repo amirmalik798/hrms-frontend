@@ -133,17 +133,22 @@ export function WorkforceWorkspace() {
       if (active) setDepartmentOptionsError(caught instanceof Error ? caught.message : "Unable to load the complete department list.");
     });
 
-    void loadAllPages<Employee>(async (page) => {
-      const result = await apiRequest<DirectoryResponse>(`/employees?page=${page}&limit=100&status=ACTIVE&sortBy=name&sortOrder=asc`);
-      return { items: result.employees ?? [], totalPages: result.pagination?.totalPages };
-    }).then((people) => {
-      if (active) setManagerOptions(people.filter((person) => ["HR_MANAGER", "DEPARTMENT_MANAGER"].includes(person.workforce_role)));
-    }).catch((caught) => {
-      if (active) setManagerOptionsError(caught instanceof Error ? caught.message : "Unable to load all eligible managers.");
-    });
+    if (user.role === "ORGANIZATION_ADMIN") {
+      void apiRequest<{ employees?: Employee[] }>("/employees/managers?role=HR_MANAGER")
+        .then((result) => {
+          if (active) setManagerOptions(result.employees ?? []);
+        })
+        .catch((caught) => {
+          if (active) setManagerOptionsError(caught instanceof Error ? caught.message : "Unable to load eligible HR Managers.");
+        });
+    } else {
+      // HR Managers report Department Managers created by them to their own
+      // linked workforce profile. Other roles do not need manager candidates.
+      setManagerOptions([]);
+    }
 
     return () => { active = false; };
-  }, []);
+  }, [user.role]);
 
   async function openDetails(id: string, mode: "details" | "edit" = "details") {
     const requestId = ++detailRequestRef.current;
@@ -370,7 +375,7 @@ function EmployeeDrawer({ open, mode, employee, loading, departments, managers, 
             <SelectInput value="ORGANIZATION_ADMIN" disabled><option value="ORGANIZATION_ADMIN">Organization Admin · Automatically selected</option></SelectInput>
           </Field>
         ) : form.workforce_role === "DEPARTMENT_MANAGER" ? (
-          <Field label="Reporting manager" hint={user.role === "HR_MANAGER" ? "Department Managers created by an HR Manager report to that HR Manager account." : managerOptionsError || "Only active HR Managers can be selected as a Department Manager’s reporting manager."}>
+          <Field label="Reporting manager" hint={user.role === "HR_MANAGER" ? "Department Managers created by an HR Manager report to that HR Manager account." : managerOptionsError || (reportingHrManagerOptions.length ? "Only eligible active HR Managers are available." : "No eligible active HR Manager account is available to select.")}>
             <SelectInput
               value={form.manager_id}
               disabled={saving || (user.role === "HR_MANAGER") || (user.role === "ORGANIZATION_ADMIN" && (Boolean(managerOptionsError) || reportingHrManagerOptions.length === 0))}
