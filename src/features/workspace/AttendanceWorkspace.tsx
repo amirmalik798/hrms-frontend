@@ -37,6 +37,51 @@ function shiftMonthsClamped(value: string, offset: number) {
   return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
 }
 
+/**
+ * The calendar API intentionally omits days without a shift, attendance event,
+ * leave request, or public holiday. For an employee's own calendar, fill those
+ * gaps in the selected range so every calendar day remains visible.
+ */
+function completeSelfAttendanceDays(
+  records: AttendanceEntry[],
+  fromDate: string,
+  toDate: string,
+  employeeId: string,
+): AttendanceEntry[] {
+  const entriesByDate = new Map(records.map((entry) => [entry.workDate, entry]));
+  const complete: AttendanceEntry[] = [];
+
+  for (let workDate = fromDate; workDate <= toDate; workDate = shiftDate(workDate, 1)) {
+    const existing = entriesByDate.get(workDate);
+    if (existing) {
+      complete.push(existing);
+      continue;
+    }
+
+    complete.push({
+      employeeId,
+      employeeCode: "",
+      firstName: "",
+      lastName: "",
+      departmentName: "",
+      workDate,
+      scheduleName: "",
+      expectedStart: null,
+      expectedEnd: null,
+      firstClockIn: null,
+      lastClockOut: null,
+      workedMinutes: 0,
+      regularWorkedMinutes: 0,
+      approvedOvertimeMinutes: 0,
+      payableOvertimeMinutes: 0,
+      excessUnapprovedOvertimeMinutes: 0,
+      calculationStatus: "NO_RECORDS",
+    });
+  }
+
+  return complete;
+}
+
 function duration(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "—";
   return `${Math.floor(value / 60)}h ${String(value % 60).padStart(2, "0")}m`;
@@ -145,7 +190,10 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
         }
       }
       if (requestId !== loadSequenceRef.current) return;
-      setEntries(entries);
+      const visibleEntries = selfOnly
+        ? completeSelfAttendanceDays(entries, appliedFromDate, appliedToDate, user.employeeId || "")
+        : entries.sort((first, second) => second.workDate.localeCompare(first.workDate));
+      setEntries(visibleEntries);
       if (latestResult?.today) setVerifiedWorkDate(latestResult.today);
       if (latestResult?.timeZone) setTimeZone(latestResult.timeZone);
     } catch (caught) {
@@ -154,7 +202,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
         setError(caught instanceof Error ? caught.message : "Unable to load attendance for the selected date range.");
       }
     } finally { if (requestId === loadSequenceRef.current) setLoading(false); }
-  }, [appliedFromDate, appliedToDate, selfOnly]);
+  }, [appliedFromDate, appliedToDate, selfOnly, user.employeeId]);
 
   useEffect(() => { if (rangeReady) void load(); }, [load, rangeReady, appliedRangeRevision]);
   useAttendanceRefresh(() => { void load(true); }, rangeReady);
@@ -241,7 +289,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
         {entries.map((entry, index) => <tr key={`${entry.employeeId}-${entry.workDate}-${index}`}>
           {!selfOnly ? <td><div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}><ProfilePhoto employeeId={entry.employeeId} currentUser={entry.employeeId === user.employeeId} name={`${entry.firstName} ${entry.lastName}`.trim()} className="user-avatar" /><span style={{ minWidth: 0 }}><span className="table-primary">{entry.firstName} {entry.lastName}</span><span className="table-secondary">{entry.employeeCode} · {entry.departmentName || "No department"}</span></span></div></td> : null}
           <td><span className="table-primary">{formatDate(entry.workDate, timeZone)}</span>{entry.leaveRequest ? <span className="table-secondary">{humanize(entry.leaveRequest.leaveType)} leave</span> : entry.publicHoliday ? <span className="table-secondary">{entry.publicHoliday.name}</span> : null}</td>
-          <td>{entry.scheduleName || "No shift"}</td><td>{entry.expectedStart && entry.expectedEnd ? `${timeLabel(entry.expectedStart, timeZone)} – ${timeLabel(entry.expectedEnd, timeZone)}` : "—"}</td><td>{timeLabel(entry.firstClockIn, timeZone)}</td><td>{timeLabel(entry.lastClockOut, timeZone)}</td><td><span className="table-primary">{duration(entry.workedMinutes)}</span></td><td>{duration(entry.payableOvertimeMinutes)}</td><td><StatusBadge value={entry.calculationStatus || (entry.leaveRequest ? entry.leaveRequest.status : entry.publicHoliday ? "HOLIDAY" : "UNKNOWN")} /></td>
+          <td>{entry.scheduleName || <span style={{ color: "var(--danger)", fontWeight: 650 }}>(No Shift Assigned)</span>}</td><td>{entry.expectedStart && entry.expectedEnd ? `${timeLabel(entry.expectedStart, timeZone)} – ${timeLabel(entry.expectedEnd, timeZone)}` : "—"}</td><td>{timeLabel(entry.firstClockIn, timeZone)}</td><td>{timeLabel(entry.lastClockOut, timeZone)}</td><td><span className="table-primary">{duration(entry.workedMinutes)}</span></td><td>{duration(entry.payableOvertimeMinutes)}</td><td><StatusBadge value={entry.calculationStatus || (entry.leaveRequest ? entry.leaveRequest.status : entry.publicHoliday ? "HOLIDAY" : "UNKNOWN")} /></td>
         </tr>)}
       </tbody></table></div> : null}
       <div className="table-footer"><span>{selfOnly ? "Your records only." : "Records are limited to your authorized organization or department scope."}</span><span>The backend calculates worked time and attendance status.</span></div>
