@@ -133,28 +133,52 @@ export function ReportsWorkspace() {
   useAttendanceRefresh(() => { if (report) void generate(true); });
 
   async function downloadPdf() {
+    if (downloading) return;
     setDownloading(true); setError(""); setNotice("");
+    // Open synchronously in the click gesture so browsers do not block the report window.
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      setError("Your browser blocked the attendance report window. Allow pop-ups for this site and try again.");
+      setDownloading(false);
+      return;
+    }
+    printWindow.document.open();
+    printWindow.document.write("<!doctype html><html><body style='font-family:Arial,sans-serif;padding:32px;color:#24354a'><h2>Preparing attendance report...</h2><p>Loading your authorized attendance records.</p></body></html>");
+    printWindow.document.close();
     try {
       if (!targetId && user.role !== "EMPLOYEE") throw new Error("Select a workforce member first.");
       if (!isDate(fromDate) || !isDate(toDate) || fromDate > toDate) throw new Error("Choose a valid date range.");
       const months = monthOrdinal(toDate) - monthOrdinal(fromDate) + 1;
       if (months > 24) throw new Error("Attendance reports can cover up to 24 calendar months at a time.");
-      const response = await fetch(`/api/backend${buildQuery(false)}`, { credentials: "same-origin", cache: "no-store" });
-      const type = response.headers.get("content-type") || "";
-      if (!response.ok || type.includes("application/json")) {
-        const payload = await response.json().catch(() => null) as { message?: string } | null;
-        throw new Error(payload?.message || `Report download failed (${response.status}).`);
+      const params = new URLSearchParams({
+        employeeId: user.role === "EMPLOYEE" ? user.employeeId || "" : targetId,
+        fromDate,
+        toDate,
+        format: "json",
+      });
+      // The monthly report endpoint returns role-scoped JSON; render it into a print-ready report.
+      const result = await apiRequest<ReportPayload>(`/attendance/reports/monthly?${params.toString()}`);
+      if (result.status !== "ok" || !result.employee || !Array.isArray(result.entries) || !Array.isArray(result.months)) {
+        throw new Error("The attendance report response was incomplete.");
       }
-      const blob = await response.blob();
-      const disposition = response.headers.get("content-disposition") || "";
-      const match = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
-      const fallback = `attendance-${user.role === "EMPLOYEE" ? "my" : (selectedTarget?.employeeCode || "workforce")}-${fromDate}-to-${toDate}.pdf`;
-      const filename = match ? decodeURIComponent(match[1].replaceAll('"', "")) : fallback;
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a"); anchor.href = url; anchor.download = filename; document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
-      setNotice("Your attendance report PDF has been downloaded.");
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to download this report."); }
-    finally { setDownloading(false); }
+      const html = buildAttendanceReportDocument(result).replace(
+        "</body>",
+        "<script>document.getElementById('attendance-report-print')?.addEventListener('click', () => window.print());</script></body>",
+      );
+      if (printWindow.closed) throw new Error("The attendance report window was closed before the PDF was ready.");
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
+      window.setTimeout(() => {
+        if (!printWindow.closed) { printWindow.focus(); printWindow.print(); }
+      }, 500);
+      setNotice("The attendance report is ready. In the print dialog, choose Save as PDF to download it.");
+    } catch (caught) {
+      if (!printWindow.closed) printWindow.close();
+      setError(caught instanceof Error ? caught.message : "Unable to prepare this attendance report PDF.");
+    } finally {
+      setDownloading(false);
+    }
   }
 
   return <>
