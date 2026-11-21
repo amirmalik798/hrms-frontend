@@ -98,7 +98,7 @@ export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
   return <>
     <PageHeader eyebrow={roleLabels[role]} title={heading} description={description} action={<Button variant="secondary" leading={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>Refresh</Button>} />
     <div className="dashboard-intro" style={{ marginBottom: 18 }}>
-      <div><h2>{role === "EMPLOYEE" ? `Welcome to your workspace` : `Good ${new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}`}, {user.email.split("@")[0]}.</h2><p>{role === "EMPLOYEE" ? "Your personal work information is all in one place." : `Here is the latest view from ${user.organizationName}.`}</p></div>
+      <div><h2>{role === "EMPLOYEE" ? `Welcome to your workspace` : `Good ${new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}`}, {user.displayName || roleLabels[role]}.</h2><p>{role === "EMPLOYEE" ? "Your personal work information is all in one place." : `Here is the latest view from ${user.organizationName}.`}</p></div>
       <span className="date-chip"><CalendarClock size={14} /> {formatDate(data?.workDate ?? new Date().toISOString(), timeZone)}</span>
     </div>
 
@@ -163,7 +163,7 @@ function EmployeeHomeContent({ clockStatus, events }: { clockStatus?: string; ev
       <p style={{ color: "var(--muted)", fontSize: 12, margin: "6px 0 18px" }}>Your clock action is validated by the organization’s active shift and attendance rules.</p>
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: 14, border: "1px solid var(--border)", borderRadius: 11, background: "var(--surface-muted)" }}><span className="metric-icon"><Clock3 size={18} /></span><div><strong style={{ color: "var(--text-strong)", display: "block", fontSize: 13 }}>{humanize(status)}</strong><span style={{ color: "var(--muted)", fontSize: 10 }}>Current clock status</span></div><span style={{ marginLeft: "auto" }}><StatusBadge value={status} /></span></div>
       {error ? <p role="alert" className="field-error" style={{ marginTop: 12 }}>{error}</p> : null}
-      <Button size="lg" className="login-submit" busy={saving} onClick={() => void punch()} leading={<Clock3 size={16} />}>{status === "CLOCKED_IN" ? "Clock out" : "Clock in"}</Button>
+      <Button size="lg" className={`attendance-action-button ${status === "CLOCKED_IN" ? "is-clock-out" : "is-clock-in"}`} busy={saving} onClick={() => void punch()} leading={<Clock3 size={16} />}>{status === "CLOCKED_IN" ? "Clock out" : "Clock in"}</Button>
       <p className="field-hint" style={{ marginTop: 10 }}>If your action is outside the permitted shift window, the server will reject it and explain why.</p>
     </Panel>
     <Panel>

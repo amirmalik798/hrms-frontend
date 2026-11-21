@@ -8,7 +8,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { apiRequest } from "@/lib/api-client";
-import { humanize, initials } from "@/lib/format";
+import { humanize } from "@/lib/format";
+import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 
 interface PersonNode {
   id: string;
@@ -104,7 +105,7 @@ export function OrganizationChartWorkspace() {
     const directReports = (children.get(person.id) || []).filter((child) => !nextVisited.has(child.id));
     return <li className="hierarchy-node" key={person.id}>
       <article className="hierarchy-person">
-        <span className="user-avatar">{initials(personName(person))}</span>
+        <ProfilePhoto name={personName(person)} employeeId={person.id} className="user-avatar" />
         <div className="hierarchy-person-copy"><strong>{personName(person)}</strong><span>{person.designation || humanize(person.workforce_role || "EMPLOYEE")}</span><small>{person.employee_code || "No employee code"}{person.department_name ? ` · ${person.department_name}` : " · No department"}</small></div>
         <div className="hierarchy-person-status"><StatusBadge value={person.employment_status || "UNKNOWN"} />{person.is_primary_hr_manager ? <span className="primary-hr-flag"><ShieldCheck size={12} /> Primary HR</span> : null}</div>
       </article>
@@ -123,7 +124,7 @@ export function OrganizationChartWorkspace() {
     {truncated ? <div className="form-note" style={{ marginBottom: 14 }}>The organization has more than 10,000 records. This chart currently shows the first 10,000 records; use Workforce to search the complete directory.</div> : null}
     <Panel>
       <div className="toolbar"><div className="toolbar-left"><label className="search-field"><Search size={14} /><input aria-label="Search organization chart" placeholder="Find a person, role, or department…" value={query} onChange={(event) => setQuery(event.target.value)} /></label></div><span style={{ color: "var(--muted)", fontSize: 11 }}>{loading ? "Loading structure…" : `${people.length.toLocaleString()} people · ${activeCount.toLocaleString()} active`}</span></div>
-      {loading && !people.length ? <div className="loading-state">Building the organization structure…</div> : error && !people.length ? null : query.trim() ? filtered.length ? <div className="hierarchy-search-results">{filtered.map((person) => <article className="hierarchy-person" key={person.id}><span className="user-avatar">{initials(personName(person))}</span><div className="hierarchy-person-copy"><strong>{personName(person)}</strong><span>{person.designation || humanize(person.workforce_role || "EMPLOYEE")}</span><small>{person.employee_code || "No employee code"} · {person.department_name || "No department"} · Reports to {person.manager_name || (person.reporting_manager_user_id ? "Organization Admin" : "No manager assigned")}</small></div><StatusBadge value={person.employment_status || "UNKNOWN"} /></article>)}</div> : <div className="empty-state"><h3>No matching people</h3><p>Try a different name, job title, or department.</p></div> : people.length ? <div className="hierarchy-tree"><ul>{roots.map((person) => renderNode(person, new Set()))}</ul></div> : <div className="empty-state"><div className="state-icon"><UserRound size={18} /></div><h3>No workforce records</h3><p>People will appear here after their workforce profiles have been created.</p></div>}
+      {loading && !people.length ? <div className="loading-state">Building the organization structure…</div> : error && !people.length ? null : query.trim() ? filtered.length ? <div className="hierarchy-search-results">{filtered.map((person) => <article className="hierarchy-person" key={person.id}><ProfilePhoto name={personName(person)} employeeId={person.id} className="user-avatar" /><div className="hierarchy-person-copy"><strong>{personName(person)}</strong><span>{person.designation || humanize(person.workforce_role || "EMPLOYEE")}</span><small>{person.employee_code || "No employee code"} · {person.department_name || "No department"} · Reports to {person.manager_name || (person.reporting_manager_user_id ? "Organization Admin" : "No manager assigned")}</small></div><StatusBadge value={person.employment_status || "UNKNOWN"} /></article>)}</div> : <div className="empty-state"><h3>No matching people</h3><p>Try a different name, job title, or department.</p></div> : people.length ? <div className="hierarchy-tree"><ul>{roots.map((person) => renderNode(person, new Set()))}</ul></div> : <div className="empty-state"><div className="state-icon"><UserRound size={18} /></div><h3>No workforce records</h3><p>People will appear here after their workforce profiles have been created.</p></div>}
     </Panel>
   </>;
 }

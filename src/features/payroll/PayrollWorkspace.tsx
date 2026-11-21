@@ -9,6 +9,7 @@ import { Field, TextArea, TextInput } from "@/components/ui/Field";
 import { Panel, PanelHeading } from "@/components/ui/Panel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest } from "@/lib/api-client";
 import { formatDate, formatMoney, humanize } from "@/lib/format";
 import { buildSalarySlipDocument, type SalarySlipPayload } from "@/features/payroll/salary-slip-document";
@@ -240,7 +241,7 @@ export function PayrollWorkspace() {
     <PageHeader eyebrow="Compensation" title={user.role === "EMPLOYEE" ? "My pay" : user.role === "DEPARTMENT_MANAGER" ? "Team payments" : "Salary payments"} description={user.role === "EMPLOYEE" ? "Review your calculated earnings and recorded monthly payment status." : "Review backend-calculated earnings, resolve rate issues, and track monthly payment status."} action={<Button variant="secondary" leading={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>Refresh</Button>} />
     {error ? <div role="alert" className="form-error" style={{ marginBottom: 14 }}>{error}</div> : null}
     {notice ? <div role="status" className="success-callout" style={{ marginBottom: 14 }}><CheckCircle2 size={15} />{notice}</div> : null}
-    <div className="grid-3" style={{ marginBottom: 16 }}>
+    <div className="page-grid grid-3" style={{ marginBottom: 16 }}>
       <Panel className="metric-card"><div className="metric-icon"><Wallet size={17} /></div><div className="metric-label">Paid this month</div><div className="metric-value">{formatMoney(paidTotal, currencyCode)}</div><div className="metric-foot">{payments.filter((item) => item.status === "PAID").length} recorded payments · {month}</div></Panel>
       <Panel className="metric-card"><div className="metric-icon"><CircleDollarSign size={17} /></div><div className="metric-label">Outstanding amount</div><div className="metric-value">{formatMoney(dueTotal, currencyCode)}</div><div className="metric-foot">{payments.filter((item) => item.status === "UNPAID").length} awaiting payment</div></Panel>
       <Panel className="metric-card"><div className="metric-icon"><AlertCircle size={17} /></div><div className="metric-label">Needs attention</div><div className="metric-value">{payments.filter((item) => ["RATE_REQUIRED", "CURRENCY_MISMATCH", "NO_RECORDED_HOURS"].includes(item.status)).length}</div><div className="metric-foot">Rate, currency, or payable-hours issue</div></Panel>
@@ -251,7 +252,7 @@ export function PayrollWorkspace() {
       {loading && !payments.length ? <div className="loading-state">Calculating monthly salary records…</div> : null}
       {!loading && !error && !visible.length ? <div className="empty-state"><div className="state-icon"><BadgeDollarSign size={18} /></div><h3>No salary records for this period</h3><p>There are no payment or payable-work records available for {month} in your authorized scope.</p></div> : null}
       {visible.length ? <div className="table-wrap"><table className="data-table"><thead><tr>{user.role !== "EMPLOYEE" ? <th>Employee</th> : null}<th>Hours</th><th>Calculated amount</th><th>Status</th><th>Payment reference</th><th>Paid date</th><th /></tr></thead><tbody>{visible.map((item) => <tr key={item.employeeId}>
-        {user.role !== "EMPLOYEE" ? <td><span className="table-primary">{item.firstName} {item.lastName}</span><span className="table-secondary">{item.employeeCode} · {item.departmentName || humanize(item.workforceRole)}</span></td> : null}
+        {user.role !== "EMPLOYEE" ? <td><div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}><ProfilePhoto employeeId={item.employeeId} name={`${item.firstName || ""} ${item.lastName || ""}`.trim() || item.employeeCode || "Employee"} className="user-avatar" /><span style={{ minWidth: 0 }}><span className="table-primary">{item.firstName} {item.lastName}</span><span className="table-secondary">{item.employeeCode} · {item.departmentName || humanize(item.workforceRole)}</span></span></div></td> : null}
         <td><span className="table-primary">{duration(item.workedMinutes)}</span><span className="table-secondary">{duration(item.payableMinutes)} payable</span></td>
         <td><span className="table-primary">{formatMoney(item.calculatedAmount, item.currencyCode)}</span>{item.status === "PAID" ? <span className="table-secondary">Recorded: {formatMoney(item.amount, item.currencyCode)}</span> : null}</td>
         <td><StatusBadge value={item.status} /></td><td>{item.paymentReference || "—"}</td><td>{item.paidAt ? formatDate(item.paidAt, timeZone) : "—"}</td>

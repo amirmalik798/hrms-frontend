@@ -129,11 +129,11 @@ export function PersonalEarningsWorkspace() {
     <div className="toolbar" style={{ marginBottom: 14 }}>
       <label className="field" style={{ maxWidth: 190 }}><span className="field-label">Pay period</span><input className="text-input" type="month" value={month} onChange={(event) => { setMonth(event.target.value); setMonthChanged(true); }} /></label>
       <span className="date-chip"><CalendarDays size={13} /> {zone}</span><span style={{ marginLeft: "auto" }} />
-      <span style={{ color: "var(--muted)", fontSize: 12 }}>{data?.employeeName || user.email}</span>
+      <span style={{ color: "var(--muted)", fontSize: 12 }}>{data?.employeeName || user.displayName}</span>
     </div>
     {error ? <div role="alert" className="form-error" style={{ marginBottom: 14 }}>{error}</div> : null}
     {!error && summary ? <>
-      <div className="grid-3" style={{ marginBottom: 16 }}>
+      <div className="page-grid grid-3" style={{ marginBottom: 16 }}>
         <Panel className="metric-card"><div className="metric-icon"><Wallet size={17} /></div><div className="metric-label">Estimated earnings</div><div className="metric-value">{formatMoney(summary.estimatedSalary, currency)}</div><div className="metric-foot">For {month} · not a final payslip</div></Panel>
         <Panel className="metric-card"><div className="metric-icon"><Clock3 size={17} /></div><div className="metric-label">Recorded work</div><div className="metric-value">{duration(summary.totalWorkedMinutes)}</div><div className="metric-foot">{summary.daysWorked} days with recorded work</div></Panel>
         <Panel className="metric-card"><div className="metric-icon"><CalendarDays size={17} /></div><div className="metric-label">Approved overtime</div><div className="metric-value">{duration(summary.payableOvertimeMinutes)}</div><div className="metric-foot">Potential unapproved overtime: {duration(summary.excessUnapprovedOvertimeMinutes)}</div></Panel>

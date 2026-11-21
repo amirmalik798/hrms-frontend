@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Panel, PanelHeading } from "@/components/ui/Panel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest } from "@/lib/api-client";
 import { formatDate, getLocalISODate, humanize } from "@/lib/format";
 
@@ -60,7 +61,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
       setLoading(true); setError(""); setWarning(""); setRangeReady(false);
       try {
         const deviceDate = getLocalISODate();
-        const initial = await apiRequest<CalendarPayload>(`/attendance/calendar?fromDate=${deviceDate}&toDate=${deviceDate}${selfScope}`);
+        const initial = await apiRequest<CalendarPayload>(`/attendance/calendar?fromDate=${deviceDate}&toDate=${deviceDate}${selfOnly ? "&scope=self" : ""}`);
         const authoritativeDate = initial.today;
         if (!authoritativeDate || !/^\d{4}-\d{2}-\d{2}$/.test(authoritativeDate)) {
           throw new Error("The organization work date could not be verified. Attendance has not been loaded using your device date.");
@@ -178,7 +179,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
       {!loading && !error && !entries.length ? <div className="empty-state"><div className="state-icon"><CalendarDays size={19} /></div><h3>No attendance entries</h3><p>There are no scheduled shifts, recorded events, or approved time-off entries in this period.</p></div> : null}
       {entries.length ? <div className="table-wrap"><table className="data-table"><thead><tr>{!selfOnly ? <th>Employee</th> : null}<th>Work date</th><th>Shift</th><th>Expected</th><th>First in</th><th>Last out</th><th>Worked</th><th>Overtime</th><th>Status</th></tr></thead><tbody>
         {entries.map((entry, index) => <tr key={`${entry.employeeId}-${entry.workDate}-${index}`}>
-          {!selfOnly ? <td><span className="table-primary">{entry.firstName} {entry.lastName}</span><span className="table-secondary">{entry.employeeCode} · {entry.departmentName || "No department"}</span></td> : null}
+          {!selfOnly ? <td><div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}><ProfilePhoto employeeId={entry.employeeId} currentUser={entry.employeeId === user.employeeId} name={`${entry.firstName} ${entry.lastName}`.trim()} className="user-avatar" /><span style={{ minWidth: 0 }}><span className="table-primary">{entry.firstName} {entry.lastName}</span><span className="table-secondary">{entry.employeeCode} · {entry.departmentName || "No department"}</span></span></div></td> : null}
           <td><span className="table-primary">{formatDate(entry.workDate, timeZone)}</span>{entry.leaveRequest ? <span className="table-secondary">{humanize(entry.leaveRequest.leaveType)} leave</span> : entry.publicHoliday ? <span className="table-secondary">{entry.publicHoliday.name}</span> : null}</td>
           <td>{entry.scheduleName || "No shift"}</td><td>{entry.expectedStart && entry.expectedEnd ? `${timeLabel(entry.expectedStart, timeZone)} – ${timeLabel(entry.expectedEnd, timeZone)}` : "—"}</td><td>{timeLabel(entry.firstClockIn, timeZone)}</td><td>{timeLabel(entry.lastClockOut, timeZone)}</td><td><span className="table-primary">{duration(entry.workedMinutes)}</span></td><td>{duration(entry.payableOvertimeMinutes)}</td><td><StatusBadge value={entry.calculationStatus || (entry.leaveRequest ? entry.leaveRequest.status : entry.publicHoliday ? "HOLIDAY" : "UNKNOWN")} /></td>
         </tr>)}

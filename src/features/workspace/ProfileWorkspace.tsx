@@ -10,7 +10,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { apiRequest } from "@/lib/api-client";
-import { humanize, initials, formatDate } from "@/lib/format";
+import { humanize, formatDate } from "@/lib/format";
+import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 
 interface ProfileRecord {
   id?: string;
@@ -30,7 +31,6 @@ export function ProfileWorkspace() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
-  const [photoFailed, setPhotoFailed] = useState(false);
   const [photoVersion, setPhotoVersion] = useState(0);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<ProfileForm>({ phone: "", country: "", city: "", emergencyName: "", emergencyRelationship: "", emergencyPhone: "" });
@@ -107,8 +107,8 @@ export function ProfileWorkspace() {
     try {
       const endpoint = isAdmin ? "/org/profile/photo" : "/employees/me/photo";
       await apiRequest(endpoint, { method: "PUT", body });
-      setPhotoFailed(false);
       setPhotoVersion((value) => value + 1);
+      window.dispatchEvent(new Event("hrms:profile-photo-updated"));
       setNotice("Your profile photo has been updated.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to upload your profile photo.");
@@ -120,7 +120,7 @@ export function ProfileWorkspace() {
 
   const firstName = isAdmin ? profile?.firstName || "" : profile?.first_name || "";
   const lastName = isAdmin ? profile?.lastName || "" : profile?.last_name || "";
-  const fullName = `${firstName} ${lastName}`.trim() || profile?.email || user.email;
+  const fullName = `${firstName} ${lastName}`.trim() || user.displayName || "Workforce member";
   const phone = isAdmin ? profile?.contactPhone : profile?.phone;
 
   return <>
@@ -129,9 +129,7 @@ export function ProfileWorkspace() {
     {error && !drawerOpen ? <div className="form-error" role="alert" style={{ marginBottom: 12 }}>{error}</div> : null}
     <div className="profile-layout">
       <Panel className="profile-identity">
-        <span className="profile-avatar">
-          {!photoFailed ? <img className="profile-avatar-photo" src={`/api/backend${isAdmin ? "/org/profile/photo" : "/employees/me/photo"}?v=${photoVersion}`} alt={`${fullName} profile`} onError={() => setPhotoFailed(true)} /> : initials(fullName)}
-        </span>
+        <ProfilePhoto name={fullName} organizationAdmin={isAdmin} currentUser={!isAdmin} refreshKey={photoVersion} className="profile-avatar" />
         <h2>{fullName}</h2><p>{profile?.email || user.email}</p>
         <StatusBadge value={isAdmin ? "ORGANIZATION_ADMIN" : profile?.employment_status || user.role} label={isAdmin ? "Organization Admin" : humanize(profile?.workforce_role || user.role)} />
         <div className="profile-photo-actions">

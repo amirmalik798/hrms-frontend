@@ -6,6 +6,7 @@ import { AlertCircle, LoaderCircle, RefreshCw, ShieldCheck } from "lucide-react"
 import { apiRequest, ApiError } from "@/lib/api-client";
 import type { WorkspaceRole, WorkspaceSessionPayload, WorkspaceUser } from "@/types/workspace";
 import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
+import { roleLabels } from "@/lib/workspace-config";
 
 interface WorkspaceContextValue {
   user: WorkspaceUser;
@@ -31,6 +32,10 @@ function roleHome(role: WorkspaceRole) {
     case "DEPARTMENT_MANAGER": return "/dm/dashboard";
     case "EMPLOYEE": return "/employee/dashboard";
   }
+}
+
+function formatAccountName(_email: string, role: WorkspaceRole) {
+  return roleLabels[role];
 }
 
 function Loading({ message }: { message: string }) {
@@ -68,12 +73,41 @@ export function WorkspaceGate({ role, children }: { role: WorkspaceRole; childre
         }
         return;
       }
+      const email = typeof candidate.email === "string" ? candidate.email : "";
+      let firstName = typeof candidate.firstName === "string" ? candidate.firstName : "";
+      let lastName = typeof candidate.lastName === "string" ? candidate.lastName : "";
+
+      // The auth endpoints intentionally return compact session identity. Load
+      // the role-scoped profile for the user's actual name without making an
+      // optional profile lookup a prerequisite for authentication.
+      try {
+        if (role === "ORGANIZATION_ADMIN") {
+          const profile = await apiRequest<{ profile?: { firstName?: string; lastName?: string } }>("/org/profile");
+          firstName = profile.profile?.firstName || firstName;
+          lastName = profile.profile?.lastName || lastName;
+        } else if (candidate.employeeId && role === "EMPLOYEE") {
+          const profile = await apiRequest<{ employee?: { first_name?: string; last_name?: string | null } }>("/employees/me");
+          firstName = profile.employee?.first_name || firstName;
+          lastName = profile.employee?.last_name || lastName;
+        } else if (candidate.employeeId) {
+          const profile = await apiRequest<{ employee?: { first_name?: string; last_name?: string | null } }>(`/employees/${encodeURIComponent(candidate.employeeId)}`);
+          firstName = profile.employee?.first_name || firstName;
+          lastName = profile.employee?.last_name || lastName;
+        }
+      } catch {
+        // Keep the workspace usable if the profile endpoint is temporarily unavailable.
+      }
+
+      const displayName = [firstName, lastName].filter(Boolean).join(" ").trim() || formatAccountName(email, role);
       const verified: WorkspaceUser = {
         id: candidate.id,
-        email: typeof candidate.email === "string" ? candidate.email : "",
+        email,
         role: candidate.role,
         organizationId: candidate.organizationId,
         organizationName: candidate.organizationName,
+        firstName: firstName || undefined,
+        lastName: lastName || undefined,
+        displayName,
         employeeId: typeof candidate.employeeId === "string" ? candidate.employeeId : undefined,
         permissions: Array.isArray(candidate.permissions) ? candidate.permissions.filter((p): p is string => typeof p === "string") : [],
       };

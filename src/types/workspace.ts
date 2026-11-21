@@ -12,6 +12,9 @@ export interface WorkspaceUser {
   role: WorkspaceRole;
   organizationId: string;
   organizationName: string;
+  firstName?: string;
+  lastName?: string;
+  displayName?: string;
   employeeId?: string;
   permissions: string[];
 }

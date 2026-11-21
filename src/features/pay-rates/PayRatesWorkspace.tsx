@@ -9,12 +9,14 @@ import { Field, TextInput } from "@/components/ui/Field";
 import { Panel, PanelHeading } from "@/components/ui/Panel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest } from "@/lib/api-client";
 import { formatDate, formatMoney } from "@/lib/format";
 
 interface EmployeeOption { id: string; employee_code: string; first_name: string; last_name: string; workforce_role: string; department_name?: string | null }
 interface Rate { id: string; employeeId: string; hourlyRate: string; overtimeRate: string; currencyCode: string; effectiveFrom: string; effectiveTo: string | null; createdAt?: string; updatedAt?: string }
 interface RateResponse { rates?: Rate[]; organizationCurrencyCode?: string | null; message?: string }
+interface EmployeeListResponse { employees?: EmployeeOption[]; pagination?: { totalPages?: number }; message?: string }
 type RateForm = { hourlyRate: string; overtimeRate: string; effectiveFrom: string; effectiveTo: string };
 const blank = (): RateForm => ({ hourlyRate: "", overtimeRate: "", effectiveFrom: "", effectiveTo: "" });
 
@@ -38,8 +40,17 @@ export function PayRatesWorkspace() {
   const loadEmployees = useCallback(async () => {
     setLoadingEmployees(true); setError("");
     try {
-      const result = await apiRequest<{ employees?: EmployeeOption[] }>("/employees?page=1&limit=100&status=ACTIVE&payRateEligible=true&sortBy=name&sortOrder=asc");
-      const data = result.employees ?? [];
+      const pageSize = 100;
+      const firstPage = await apiRequest<EmployeeListResponse>(`/employees?page=1&limit=${pageSize}&status=ACTIVE&payRateEligible=true&sortBy=name&sortOrder=asc`);
+      if (!Array.isArray(firstPage.employees)) throw new Error(firstPage.message || "The eligible employee list response was invalid.");
+      const data = [...firstPage.employees];
+      const totalPages = Math.max(1, Number(firstPage.pagination?.totalPages) || 1);
+      if (totalPages > 10001) throw new Error("The eligible employee list is too large to load safely. Refine the workforce list and try again.");
+      for (let page = 2; page <= totalPages; page += 1) {
+        const nextPage = await apiRequest<EmployeeListResponse>(`/employees?page=${page}&limit=${pageSize}&status=ACTIVE&payRateEligible=true&sortBy=name&sortOrder=asc`);
+        if (!Array.isArray(nextPage.employees)) throw new Error("The eligible employee list was incomplete. Please refresh and try again.");
+        data.push(...nextPage.employees);
+      }
       setEmployees(data);
       setEmployeeId((currentId) => currentId && data.some((item) => item.id === currentId) ? currentId : data[0]?.id ?? "");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load eligible workforce members."); }
@@ -82,6 +93,7 @@ export function PayRatesWorkspace() {
     <Panel style={{ marginBottom:16 }}>
       <div className="panel-pad form-grid" style={{ alignItems:"end" }}>
         <Field label="Workforce member" hint="Eligible profiles only. Your own HR Manager record and Organization Admin accounts are excluded by the backend."><select className="text-input" value={employeeId} disabled={loadingEmployees} onChange={(e) => setEmployeeId(e.target.value)}><option value="">{loadingEmployees ? "Loading eligible people…" : "Select a person"}</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.first_name} {employee.last_name} · {employee.employee_code} · {employee.workforce_role.replaceAll("_"," ")}</option>)}</select></Field>
+        <div><p className="field-hint" style={{ margin:0 }}>Selected workforce member</p>{current ? <div style={{ display:"flex", alignItems:"center", gap:9, marginTop:5 }}><ProfilePhoto name={`${current.first_name} ${current.last_name}`} employeeId={current.id} /><span><strong style={{ display:"block", fontSize:13, color:"var(--text-strong)" }}>{current.first_name} {current.last_name}</strong><span className="table-secondary">{current.employee_code} · {current.workforce_role.replaceAll("_", " ")}</span></span></div> : <span className="field-hint">No eligible member selected</span>}</div>
         <div><p className="field-hint" style={{ margin:0 }}>Organization currency</p><strong style={{ fontSize:18, color:"var(--text-strong)" }}>{selectedCurrency || "Not configured"}</strong></div>
         <div><p className="field-hint" style={{ margin:0 }}>Current effective rate</p><strong style={{ fontSize:14, color:"var(--text-strong)" }}>{activeRate ? `${formatMoney(activeRate.hourlyRate, activeRate.currencyCode)} / hour` : "No rate set"}</strong></div>
       </div>

@@ -7,8 +7,8 @@ import { Activity, Bell, Building2, Check, ChevronDown, ChevronsLeft, ChevronsRi
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { workspaceNavigation, roleLabels, type NavItem } from "@/lib/workspace-config";
 import { apiRequest, pickArray, stringValue } from "@/lib/api-client";
-import { initials } from "@/lib/format";
 import { OrganizationMark } from "@/components/layout/OrganizationMark";
+import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { WorkspaceClock } from "@/components/layout/WorkspaceClock";
 import type { WorkspaceRole } from "@/types/workspace";
 
@@ -96,7 +96,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         </Link>
         <div className="sidebar-workspace" title={user.organizationName}>
           <OrganizationMark name={user.organizationName} />
-          <span className="sidebar-workspace-copy" style={{ minWidth: 0 }}><span className="sidebar-workspace-name">{user.organizationName}</span><span className="sidebar-workspace-role">{roleLabels[user.role]}</span></span>
+          <span className="sidebar-workspace-copy"><span className="sidebar-workspace-name">{user.organizationName}</span><span className="sidebar-workspace-role">{roleLabels[user.role]}</span></span>
         </div>
         <nav className="sidebar-nav" aria-label="Workspace navigation">
           {groups.map((group) => <div className="nav-group" key={group.label}>
@@ -128,7 +128,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             <span className="topbar-divider" />
             <div style={{ position: "relative" }}>
               <button type="button" className="user-menu" onClick={() => setMenuOpen((value) => !value)} aria-expanded={menuOpen}>
-                <span className="user-avatar">{initials(user.email || user.organizationName)}</span><span className="user-menu-copy"><strong>{user.email.split("@")[0] || roleLabels[user.role]}</strong><span>{roleLabels[user.role]}</span></span><ChevronDown size={14} color="var(--muted)" />
+                <ProfilePhoto name={user.displayName || user.organizationName} currentUser={user.role !== "ORGANIZATION_ADMIN"} organizationAdmin={user.role === "ORGANIZATION_ADMIN"} /><span className="user-menu-copy"><strong>{user.displayName || roleLabels[user.role]}</strong><span>{roleLabels[user.role]}</span></span><ChevronDown size={14} color="var(--muted)" />
               </button>
               {menuOpen ? <div className="panel" style={{ position: "absolute", top: 45, right: 0, zIndex: 50, width: 205, padding: 6, boxShadow: "var(--shadow)" }}>
                 <Link className="command-result" href={profileHref(user.role)} onClick={() => setMenuOpen(false)}><Settings2 size={15} /> Profile & preferences</Link>

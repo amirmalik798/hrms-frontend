@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDownToLine, FileBarChart, RefreshCw } from "lucide-react";
+import { ArrowDownToLine, CalendarRange, FileBarChart, RefreshCw } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
 import { Field, SelectInput, TextInput } from "@/components/ui/Field";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest } from "@/lib/api-client";
 import { formatDate, humanize } from "@/lib/format";
 
@@ -26,6 +27,9 @@ export function ReportsWorkspace() {
   const [loadingTargets, setLoadingTargets] = useState(user.role !== "EMPLOYEE");
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [fromMonth, setFromMonth] = useState(monthStart(workDate || todayISO()).slice(0, 7));
+  const [toMonth, setToMonth] = useState((workDate || todayISO()).slice(0, 7));
+  const [monthlyDownloading, setMonthlyDownloading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -42,9 +46,39 @@ export function ReportsWorkspace() {
   }, [user.role]);
 
   useEffect(() => { void loadTargets(); }, [loadTargets]);
-  useEffect(() => { if (workDate) { setToDate(workDate); setFromDate((current) => current === monthStart(todayISO()) ? monthStart(workDate) : current); } }, [workDate]);
+  useEffect(() => { if (workDate) { setToDate(workDate); setFromDate((current) => current === monthStart(todayISO()) ? monthStart(workDate) : current); setToMonth((current) => current === todayISO().slice(0, 7) ? workDate.slice(0, 7) : current); setFromMonth((current) => current === todayISO().slice(0, 7) ? workDate.slice(0, 7) : current); } }, [workDate]);
 
   const selectedTarget = useMemo(() => targets.find((target) => target.employeeId === targetId), [targets, targetId]);
+  const canGenerateOrganizationSeries = user.role === "ORGANIZATION_ADMIN" || user.role === "HR_MANAGER";
+  const monthSpan = isMonth(fromMonth) && isMonth(toMonth) && fromMonth <= toMonth
+    ? monthOrdinal(toMonth) - monthOrdinal(fromMonth) + 1
+    : 0;
+
+  async function downloadOrganizationSeries() {
+    if (!canGenerateOrganizationSeries || monthlyDownloading) return;
+    if (!monthSpan) { setError("Choose valid From month and To month values."); return; }
+    if (monthSpan > 24) { setError("An organization attendance report can cover up to 24 calendar months at a time."); return; }
+    setMonthlyDownloading(true); setError(""); setNotice("");
+    try {
+      const params = new URLSearchParams({ fromMonth, toMonth });
+      const response = await fetch(`/api/backend/attendance/reports/monthly-organization?${params.toString()}`, { credentials: "same-origin", cache: "no-store" });
+      const contentType = response.headers.get("content-type") || "";
+      if (!response.ok || contentType.toLowerCase().includes("application/json")) {
+        const payload = await response.json().catch(() => null) as { message?: string } | null;
+        throw new Error(payload?.message || `Monthly attendance report failed (${response.status}).`);
+      }
+      const blob = await response.blob();
+      if (!blob.size || !blob.type.toLowerCase().includes("pdf")) throw new Error("The monthly attendance report was not returned as a PDF.");
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `attendance-monthly-${fromMonth}-to-${toMonth}.pdf`;
+      document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setNotice(`Combined attendance report downloaded for ${fromMonth} through ${toMonth}.`);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to download the multi-month attendance report."); }
+    finally { setMonthlyDownloading(false); }
+  }
   const totalWorkedHours = useMemo(() => (report?.months || []).reduce((sum, month) => sum + month.workedMinutes, 0) / 60, [report]);
   const totalPayableOvertime = useMemo(() => (report?.months || []).reduce((sum, month) => sum + month.payableOvertimeMinutes, 0) / 60, [report]);
 
@@ -93,15 +127,26 @@ export function ReportsWorkspace() {
   }
 
   return <>
-    <PageHeader eyebrow="Insights" title="Attendance reports" description="Generate a detailed attendance report for a person and a date range. Report data and calculations are supplied by the backend." action={<Button variant="secondary" leading={<RefreshCw size={14} />} busy={loadingTargets} onClick={() => void loadTargets()}>Refresh targets</Button>} />
+    <PageHeader eyebrow="Insights" title="Attendance reports" description="Generate individual and multi-month attendance reports. Report data, role scope, and calculations are supplied by the backend." action={<Button variant="secondary" leading={<RefreshCw size={14} />} busy={loadingTargets} onClick={() => void loadTargets()}>Refresh targets</Button>} />
     {notice ? <div className="success-callout" role="status" style={{ marginBottom: 12 }}>{notice}</div> : null}
     {error ? <div className="form-error" role="alert" style={{ marginBottom: 12 }}>{error}</div> : null}
+    {canGenerateOrganizationSeries ? <Panel className="panel-pad organization-monthly-report">
+      <div className="organization-monthly-heading"><span className="metric-icon"><CalendarRange size={17} /></span><div><h2>{user.role === "ORGANIZATION_ADMIN" ? "Multi-month organization attendance" : "Multi-month direct-reports attendance"}</h2><p>{user.role === "ORGANIZATION_ADMIN" ? "Download one PDF containing the organization-wide monthly attendance registers." : "Download one PDF containing monthly attendance registers for your authorized direct-report scope."} Up to 24 months per report.</p></div></div>
+      <div className="report-filter-grid organization-monthly-fields">
+        <Field label="From month"><TextInput type="month" min="1900-01" max={toMonth || undefined} value={fromMonth} onChange={(event) => setFromMonth(event.target.value)} /></Field>
+        <Field label="To month"><TextInput type="month" min={fromMonth || "1900-01"} max={(workDate || todayISO()).slice(0, 7)} value={toMonth} onChange={(event) => setToMonth(event.target.value)} /></Field>
+        <div className="organization-monthly-summary"><strong>{monthSpan || "—"}</strong><span>{monthSpan === 1 ? "calendar month" : "calendar months"} · maximum 24</span></div>
+      </div>
+      <div className="organization-monthly-footer"><p>Uses organization timezone: <strong>{timeZone}</strong>. Future dates are excluded by the backend.</p><Button variant="primary" leading={<ArrowDownToLine size={14} />} busy={monthlyDownloading} disabled={!monthSpan || monthSpan > 24} onClick={() => void downloadOrganizationSeries()}>Download combined PDF</Button></div>
+      {monthSpan > 24 ? <p className="field-hint" role="alert">Choose a range of 24 months or fewer.</p> : null}
+    </Panel> : null}
     <Panel className="panel-pad">
       <div className="report-filter-grid">
         {user.role !== "EMPLOYEE" ? <Field label="Workforce member"><SelectInput required value={targetId} onChange={(event) => { setTargetId(event.target.value); setReport(null); }}><option value="">Select a person</option>{targets.map((target) => <option key={target.employeeId} value={target.employeeId}>{target.firstName} {target.lastName} · {target.employeeCode} · {target.departmentName || "No department"}</option>)}</SelectInput></Field> : <Field label="Report subject"><TextInput disabled value="My attendance" /></Field>}
         <Field label="From date"><TextInput type="date" value={fromDate} max={toDate} onChange={(event) => { setFromDate(event.target.value); setReport(null); }} /></Field>
         <Field label="To date"><TextInput type="date" value={toDate} min={fromDate} onChange={(event) => { setToDate(event.target.value); setReport(null); }} /></Field>
       </div>
+      {selectedTarget ? <div className="report-selected-person"><ProfilePhoto name={`${selectedTarget.firstName} ${selectedTarget.lastName}`} employeeId={selectedTarget.employeeId} currentUser={user.role === "EMPLOYEE" && selectedTarget.employeeId === user.employeeId} /><span><strong>{selectedTarget.firstName} {selectedTarget.lastName}</strong><small>{selectedTarget.employeeCode} · {selectedTarget.departmentName || "No department"}</small></span></div> : null}
       <div className="report-filter-footer"><p>Organization timezone: <strong>{timeZone}</strong>. Maximum report span: 24 calendar months.</p><div style={{ display: "flex", gap: 8 }}><Button variant="secondary" leading={<FileBarChart size={14} />} busy={generating} disabled={loadingTargets || (!targetId && user.role !== "EMPLOYEE")} onClick={() => void generate()}>Preview report</Button><Button variant="primary" leading={<ArrowDownToLine size={14} />} busy={downloading} disabled={loadingTargets || (!targetId && user.role !== "EMPLOYEE")} onClick={() => void downloadPdf()}>Download PDF</Button></div></div>
     </Panel>
     {report ? <>
@@ -118,4 +163,5 @@ function todayISO() { return new Date().toISOString().slice(0, 10); }
 function monthStart(value: string) { return `${value.slice(0, 7)}-01`; }
 function isDate(value: string) { return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`)); }
 function monthOrdinal(value: string) { const [year, month] = value.split("-").map(Number); return year * 12 + month; }
+function isMonth(value: string) { return /^\d{4}-(0[1-9]|1[0-2])$/.test(value); }
 function formatTime(value: string | null, timeZone: string) { if (!value) return "—"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", hour12: true, timeZone }).format(date); }
