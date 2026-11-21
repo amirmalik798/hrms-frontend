@@ -6,6 +6,7 @@ import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/ui/Field";
+import { COUNTRY_OPTIONS, CountrySelect, countryOption, isCallingCodeOnly, replacePhoneCountryCode, type CountryOption } from "@/components/ui/CountryPhoneFields";
 import { Panel } from "@/components/ui/Panel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -31,6 +32,8 @@ interface Employee {
   department_name: string | null;
   manager_id: string | null;
   manager_name: string | null;
+  manager_workforce_role?: string | null;
+  is_primary_hr_manager?: boolean;
   joining_date: string;
   invitation_id?: string | null;
   invitation_status?: string | null;
@@ -41,7 +44,7 @@ interface Employee {
   managed_departments?: { id: string; name: string; status?: string }[];
   [key: string]: unknown;
 }
-interface DepartmentOption { id: string; name: string; status?: string }
+interface DepartmentOption { id: string; name: string; status?: string; manager_id?: string | null; manager_name?: string | null; manager_eligible?: boolean }
 interface DirectoryResponse { employees?: Employee[]; pagination?: { page?: number; total?: number; totalPages?: number }; message?: string }
 interface EmployeeForm {
   employee_code: string; first_name: string; last_name: string; email: string; phone: string;
@@ -51,6 +54,19 @@ interface EmployeeForm {
 }
 const blankForm = (): EmployeeForm => ({ employee_code: "", first_name: "", last_name: "", email: "", phone: "", country: "", city: "", designation: "", joining_date: "", workforce_role: "EMPLOYEE", manager_id: "", department_id: "", emergency_contact_name: "", emergency_contact_relationship: "", emergency_contact_phone: "" });
 const roleDisplay: Record<string, string> = { HR_MANAGER: "HR Manager", DEPARTMENT_MANAGER: "Department Manager", EMPLOYEE: "Employee" };
+
+function detectCountryFromPhone(phone: string, preferredCountry?: string): CountryOption | null {
+  const value = phone.trim();
+  if (!value.startsWith("+")) return null;
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return null;
+
+  const matches = COUNTRY_OPTIONS
+    .filter((country) => digits.startsWith(country.callingCode))
+    .sort((left, right) => right.callingCode.length - left.callingCode.length);
+  const preferred = countryOption(preferredCountry);
+  return matches.find((country) => country.code === preferred?.code) ?? matches[0] ?? null;
+}
 
 export function WorkforceWorkspace() {
   const { user } = useWorkspace();
@@ -238,17 +254,77 @@ function EmployeeDrawer({ open, mode, employee, loading, departments, managers, 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showEmergency, setShowEmergency] = useState(false);
+
+  const hrManagerOptions = useMemo(() => managers
+    .filter((manager) => manager.workforce_role === "HR_MANAGER" && manager.id !== employee?.id)
+    .sort((left, right) => Number(Boolean(right.is_primary_hr_manager)) - Number(Boolean(left.is_primary_hr_manager))), [managers, employee?.id]);
+  const reportingHrManagerOptions = useMemo(
+    () => user.role === "HR_MANAGER"
+      ? hrManagerOptions.filter((manager) => manager.id === user.employeeId)
+      : hrManagerOptions,
+    [hrManagerOptions, user.role, user.employeeId],
+  );
+  const departmentManagerOptions = useMemo(
+    () => managers.filter((manager) => manager.workforce_role === "DEPARTMENT_MANAGER" && manager.id !== employee?.id),
+    [managers, employee?.id],
+  );
+  const selectedDepartment = departments.find((department) => department.id === form.department_id) ?? null;
+  const selectedDepartmentManagerId = selectedDepartment?.manager_id
+    || (employee?.workforce_role === "EMPLOYEE" ? form.manager_id : "");
+  const selectedDepartmentManager = departmentManagerOptions.find((manager) => manager.id === selectedDepartmentManagerId);
+  const selectedDepartmentManagerName = selectedDepartmentManager
+    ? `${selectedDepartmentManager.first_name} ${selectedDepartmentManager.last_name}`.trim()
+    : selectedDepartment?.manager_name
+      || (employee?.manager_id === selectedDepartmentManagerId ? employee.manager_name : "")
+      || "";
+
   useEffect(() => {
     if (!open) return;
-    setError(""); setShowEmergency(Boolean(employee?.emergency_contact_name || employee?.emergency_contact_phone));
-    if (employee) setForm({
-      employee_code: employee.employee_code ?? "", first_name: employee.first_name ?? "", last_name: employee.last_name ?? "", email: employee.email ?? "", phone: employee.phone ?? "", country: employee.country ?? "", city: employee.city ?? "", designation: employee.designation ?? "", joining_date: employee.joining_date?.slice(0, 10) ?? "", workforce_role: employee.workforce_role ?? "EMPLOYEE", manager_id: employee.manager_id ?? "", department_id: employee.department_id ?? "", emergency_contact_name: employee.emergency_contact_name ?? "", emergency_contact_relationship: employee.emergency_contact_relationship ?? "", emergency_contact_phone: employee.emergency_contact_phone ?? "",
-    }); else setForm(blankForm());
+    setError("");
+    setShowEmergency(Boolean(employee?.emergency_contact_name || employee?.emergency_contact_phone));
+    if (employee) {
+      const savedPhone = employee.phone ?? "";
+      const detectedCountry = detectCountryFromPhone(savedPhone, employee.country ?? undefined);
+      const country = employee.country || detectedCountry?.name || "";
+      const phone = country ? replacePhoneCountryCode(savedPhone, country, country) : savedPhone;
+      setForm({
+        employee_code: employee.employee_code ?? "", first_name: employee.first_name ?? "", last_name: employee.last_name ?? "", email: employee.email ?? "", phone, country, city: employee.city ?? "", designation: employee.designation ?? "", joining_date: employee.joining_date?.slice(0, 10) ?? "", workforce_role: employee.workforce_role ?? "EMPLOYEE", manager_id: employee.manager_id ?? "", department_id: employee.department_id ?? "", emergency_contact_name: employee.emergency_contact_name ?? "", emergency_contact_relationship: employee.emergency_contact_relationship ?? "", emergency_contact_phone: employee.emergency_contact_phone ?? "",
+      });
+    } else {
+      setForm(blankForm());
+    }
   }, [open, employee]);
-  const update = (key: keyof EmployeeForm, value: string) => setForm((current) => ({ ...current, [key]: value }));
+
+  const update = (key: keyof EmployeeForm, value: string) => setForm((current) => {
+    if (key === "country") {
+      return {
+        ...current,
+        country: value,
+        phone: replacePhoneCountryCode(current.phone, current.country, value),
+      };
+    }
+    if (key === "phone") {
+      const detectedCountry = detectCountryFromPhone(value, current.country);
+      return { ...current, phone: value, country: detectedCountry?.name ?? current.country };
+    }
+    if (key === "department_id") {
+      const department = departments.find((item) => item.id === value);
+      return {
+        ...current,
+        department_id: value,
+        manager_id: current.workforce_role === "EMPLOYEE" ? department?.manager_id ?? "" : current.manager_id,
+      };
+    }
+    return { ...current, [key]: value };
+  });
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setSaving(true); setError("");
+    event.preventDefault();
+    if (isCallingCodeOnly(form.phone, form.country)) {
+      setError("Enter the complete phone number after the country calling code.");
+      return;
+    }
+    setSaving(true); setError("");
     const body: Record<string, string | null> = {
       employee_code: form.employee_code.trim().toUpperCase(), first_name: form.first_name.trim(), last_name: form.last_name.trim(), email: form.email.trim().toLowerCase(), phone: form.phone.trim(), country: form.country.trim(), city: form.city.trim(), designation: form.designation.trim(), joining_date: form.joining_date, workforce_role: form.workforce_role,
       manager_id: form.manager_id || null, department_id: form.department_id || null,
@@ -276,18 +352,50 @@ function EmployeeDrawer({ open, mode, employee, loading, departments, managers, 
       {error ? <div className="form-error" role="alert">{error}</div> : null}
       <section className="form-section"><h3 className="form-section-title"><UserRound size={15} /> Personal & employment</h3><div className="form-grid">
         <Field label="Employee code"><TextInput required maxLength={50} value={form.employee_code} onChange={(e) => update("employee_code", e.target.value)} placeholder="e.g. EMP-001" /></Field>
-        <Field label="Workforce role"><SelectInput required disabled={!allowRoleChoice} value={form.workforce_role} onChange={(e) => update("workforce_role", e.target.value)}><option value="EMPLOYEE">Employee</option><option value="DEPARTMENT_MANAGER">Department Manager</option>{user.role === "ORGANIZATION_ADMIN" ? <option value="HR_MANAGER">HR Manager</option> : null}</SelectInput></Field>
+        <Field label="Workforce role"><SelectInput required disabled={!allowRoleChoice} value={form.workforce_role} onChange={(e) => {
+          const nextRole = e.target.value as EmployeeForm["workforce_role"];
+          const primaryHrManager = hrManagerOptions.find((manager) => manager.is_primary_hr_manager) ?? hrManagerOptions[0];
+          const nextManagerId = nextRole === "DEPARTMENT_MANAGER"
+            ? user.role === "HR_MANAGER" ? user.employeeId ?? "" : primaryHrManager?.id ?? ""
+            : "";
+          setForm((current) => ({ ...current, workforce_role: nextRole, department_id: "", manager_id: nextManagerId }));
+        }}><option value="EMPLOYEE">Employee</option><option value="DEPARTMENT_MANAGER">Department Manager</option>{user.role === "ORGANIZATION_ADMIN" ? <option value="HR_MANAGER">HR Manager</option> : null}</SelectInput></Field>
         <Field label="First name"><TextInput required minLength={2} maxLength={100} value={form.first_name} onChange={(e) => update("first_name", e.target.value)} /></Field>
         <Field label="Last name"><TextInput required minLength={2} maxLength={100} value={form.last_name} onChange={(e) => update("last_name", e.target.value)} /></Field>
         <Field label="Job title"><TextInput required maxLength={100} value={form.designation} onChange={(e) => update("designation", e.target.value)} placeholder="e.g. Finance Officer" /></Field>
         <Field label="Joining date"><TextInput required type="date" value={form.joining_date} onChange={(e) => update("joining_date", e.target.value)} /></Field>
-        <Field label="Department" hint={departmentOptionsError || "All organization departments are listed."}><SelectInput disabled={Boolean(departmentOptionsError) || saving} value={form.department_id} onChange={(e) => update("department_id", e.target.value)}><option value="">No department assigned</option>{departments.filter((d) => d.status !== "INACTIVE").map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</SelectInput></Field>
-        <Field label="Reporting manager" hint={managerOptionsError || "All active HR Managers and Department Managers are listed."}><SelectInput disabled={Boolean(managerOptionsError) || saving} value={form.manager_id} onChange={(e) => update("manager_id", e.target.value)}><option value="">No manager assigned</option>{managers.filter((m) => m.id !== employee?.id).map((m) => <option key={m.id} value={m.id}>{m.first_name} {m.last_name} · {roleDisplay[m.workforce_role] ?? humanize(m.workforce_role)}</option>)}</SelectInput></Field>
+        {form.workforce_role === "EMPLOYEE" ? <Field label="Department" hint={departmentOptionsError || "The selected department determines the Employee’s Department Manager."}><SelectInput required={mode === "create"} disabled={Boolean(departmentOptionsError) || saving} value={form.department_id} onChange={(e) => update("department_id", e.target.value)}><option value="">{mode === "create" ? "Select department" : "No department assigned"}</option>{departments.filter((d) => d.status !== "INACTIVE").map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</SelectInput></Field> : null}
+        {form.workforce_role === "HR_MANAGER" ? (
+          <Field label="Reporting manager" hint="Automatically assigned to the Organization Admin account that creates this HR Manager profile.">
+            <SelectInput value="ORGANIZATION_ADMIN" disabled><option value="ORGANIZATION_ADMIN">Organization Admin · Automatically selected</option></SelectInput>
+          </Field>
+        ) : form.workforce_role === "DEPARTMENT_MANAGER" ? (
+          <Field label="Reporting manager" hint={user.role === "HR_MANAGER" ? "Department Managers created by an HR Manager report to that HR Manager account." : managerOptionsError || "Only active HR Managers can be selected as a Department Manager’s reporting manager."}>
+            <SelectInput
+              value={form.manager_id}
+              disabled={saving || (user.role === "HR_MANAGER") || (user.role === "ORGANIZATION_ADMIN" && (Boolean(managerOptionsError) || reportingHrManagerOptions.length === 0))}
+              onChange={(e) => update("manager_id", e.target.value)}
+            >
+              <option value="">Select active HR Manager</option>
+              {reportingHrManagerOptions.map((manager) => <option key={manager.id} value={manager.id}>{manager.first_name} {manager.last_name} · {manager.employee_code}{manager.is_primary_hr_manager ? " · Primary HR Manager" : ""}</option>)}
+              {user.role === "HR_MANAGER" && user.employeeId && !reportingHrManagerOptions.some((manager) => manager.id === user.employeeId) ? <option value={user.employeeId}>{user.displayName || "Your HR Manager account"} · You</option> : null}
+            </SelectInput>
+          </Field>
+        ) : (
+          <Field label="Reporting manager" hint={selectedDepartmentManagerName ? "Automatically assigned from the selected department. Only its Department Manager is shown." : "Select a department with an assigned Department Manager to populate this field."}>
+            <SelectInput value={selectedDepartmentManagerId} disabled>
+              {selectedDepartmentManagerId ? <option value={selectedDepartmentManagerId}>{selectedDepartmentManagerName || "Assigned Department Manager"}</option> : <option value="">Select department first</option>}
+            </SelectInput>
+          </Field>
+        )}
       </div></section>
       <section className="form-section"><h3 className="form-section-title"><Mail size={15} /> Contact details</h3><div className="form-grid">
         <Field label="Work email"><TextInput type="email" required maxLength={254} value={form.email} onChange={(e) => update("email", e.target.value)} placeholder="person@company.com" /></Field>
-        <Field label="Phone number"><TextInput required maxLength={40} value={form.phone} onChange={(e) => update("phone", e.target.value)} placeholder="Include country code" /></Field>
-        <Field label="Country"><TextInput required maxLength={100} value={form.country} onChange={(e) => update("country", e.target.value)} /></Field>
+        <div className="field">
+          <label className="field-label" htmlFor="workforce-country-select">Country</label>
+          <CountrySelect id="workforce-country-select" value={form.country} onChange={(value) => update("country", value)} required className="text-input" placeholder="Search country, code or calling code…" />
+        </div>
+        <Field label="Phone number" hint="The country calling code is added automatically. An international prefix entered here also detects the country."><TextInput type="tel" inputMode="tel" autoComplete="tel" required maxLength={50} value={form.phone} onChange={(e) => update("phone", e.target.value)} placeholder="e.g. +250 788 000 000" /></Field>
         <Field label="City"><TextInput required maxLength={100} value={form.city} onChange={(e) => update("city", e.target.value)} /></Field>
       </div></section>
       <section className="form-section"><button type="button" className="form-section-title" onClick={() => setShowEmergency((value) => !value)} style={{ width: "100%", border: 0, background: "transparent", padding: 0, cursor: "pointer", textAlign: "left" }}><ShieldCheck size={15} /> Emergency contact <span style={{ marginLeft: "auto", color: "var(--accent)", fontSize: 10 }}>{showEmergency ? "Hide" : "Add details"}</span></button>
