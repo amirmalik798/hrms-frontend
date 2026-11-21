@@ -11,7 +11,7 @@ import { Panel } from "@/components/ui/Panel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { apiRequest, ApiError, pickArray, stringValue } from "@/lib/api-client";
-import { formatDate, humanize } from "@/lib/format";
+import { formatDate, getISODateInTimeZone, humanize } from "@/lib/format";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { useSmartRefresh } from "@/lib/smart-refresh";
 import { loadAllPages } from "@/lib/paginated-data";
@@ -254,7 +254,9 @@ export function WorkforceWorkspace() {
 }
 
 function EmployeeDrawer({ open, mode, employee, loading, departments, managers, departmentOptionsError, managerOptionsError, onClose, onSaved }: { open: boolean; mode: "create" | "edit"; employee: Employee | null; loading: boolean; departments: DepartmentOption[]; managers: Employee[]; departmentOptionsError: string; managerOptionsError: string; onClose: () => void; onSaved: () => void }) {
-  const { user } = useWorkspace();
+  const { user, workDate, timeZone } = useWorkspace();
+  const dateContextRef = useRef({ workDate, timeZone });
+  dateContextRef.current = { workDate, timeZone };
   const [form, setForm] = useState<EmployeeForm>(blankForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -296,7 +298,11 @@ function EmployeeDrawer({ open, mode, employee, loading, departments, managers, 
         employee_code: employee.employee_code ?? "", first_name: employee.first_name ?? "", last_name: employee.last_name ?? "", email: employee.email ?? "", phone, country, city: employee.city ?? "", designation: employee.designation ?? "", joining_date: employee.joining_date?.slice(0, 10) ?? "", workforce_role: employee.workforce_role ?? "EMPLOYEE", manager_id: employee.manager_id ?? "", department_id: employee.department_id ?? "", emergency_contact_name: employee.emergency_contact_name ?? "", emergency_contact_relationship: employee.emergency_contact_relationship ?? "", emergency_contact_phone: employee.emergency_contact_phone ?? "",
       });
     } else {
-      setForm(blankForm());
+      const currentDateContext = dateContextRef.current;
+      setForm({
+        ...blankForm(),
+        joining_date: currentDateContext.workDate || getISODateInTimeZone(currentDateContext.timeZone),
+      });
     }
   }, [open, employee]);
 
