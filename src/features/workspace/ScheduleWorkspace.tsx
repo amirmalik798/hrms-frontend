@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { CalendarClock, CalendarRange, Plus, Power, PowerOff, RefreshCw, UserRound, Users } from "lucide-react";
+import { CalendarClock, CalendarRange, Plus, Power, PowerOff, UserRound, Users } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
@@ -12,6 +12,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { apiRequest } from "@/lib/api-client";
 import { formatDate, humanize, getLocalISODate } from "@/lib/format";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 
 interface ScheduleDay { dayOfWeek: number; startTime: string; endTime: string; breakMinutes: number }
 interface Schedule { id: string; name: string; description: string | null; status: string; days: ScheduleDay[] }
@@ -45,8 +46,8 @@ export function ScheduleWorkspace() {
   const [effectiveTo, setEffectiveTo] = useState("");
   const [statusConfirm, setStatusConfirm] = useState<Schedule | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true); setError("");
     try {
       const assignmentsPromise = apiRequest<{ assignments?: Assignment[] }>("/schedule-assignments");
       const schedulePromise = canManage ? apiRequest<{ schedules?: Schedule[] }>("/schedules?includeInactive=true") : Promise.resolve({ schedules: [] as Schedule[] });
@@ -61,10 +62,11 @@ export function ScheduleWorkspace() {
       });
       setPeople(eligible);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load schedules."); }
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   }, [canManage, user.role]);
 
   useEffect(() => { void load(); }, [load]);
+  useSmartRefresh(() => load(true), !scheduleDrawer && !assignmentDrawer && !statusConfirm && !saving);
   useEffect(() => { if (workDate && effectiveFrom === getLocalISODate()) setEffectiveFrom(workDate); }, [workDate, effectiveFrom]);
   const activeSchedules = useMemo(() => schedules.filter((item) => item.status === "ACTIVE"), [schedules]);
   const normalizedSearch = search.trim().toLocaleLowerCase();
@@ -122,7 +124,7 @@ export function ScheduleWorkspace() {
   }
 
   return <>
-    <PageHeader eyebrow="Time & work" title={user.role === "EMPLOYEE" ? "My schedule" : user.role === "DEPARTMENT_MANAGER" ? "Team schedule" : "Schedules"} description={user.role === "EMPLOYEE" ? "See the shifts assigned to you and the dates they apply." : user.role === "DEPARTMENT_MANAGER" ? "Review shift coverage for your assigned departments." : "Define working patterns and assign them to eligible workforce members."} action={canManage ? <div style={{ display: "flex", gap: 8 }}><Button variant="secondary" leading={<Plus size={14} />} onClick={() => { setError(""); setAssignmentDrawer(true); }}>Assign schedule</Button><Button variant="primary" leading={<Plus size={14} />} onClick={() => { setError(""); setScheduleDrawer(true); }}>Create schedule</Button></div> : <Button variant="secondary" leading={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>Refresh</Button>} />
+    <PageHeader eyebrow="Time & work" title={user.role === "EMPLOYEE" ? "My schedule" : user.role === "DEPARTMENT_MANAGER" ? "Team schedule" : "Schedules"} description={user.role === "EMPLOYEE" ? "See the shifts assigned to you and the dates they apply." : user.role === "DEPARTMENT_MANAGER" ? "Review shift coverage for your assigned departments." : "Define working patterns and assign them to eligible workforce members."} action={canManage ? <div style={{ display: "flex", gap: 8 }}><Button variant="secondary" leading={<Plus size={14} />} onClick={() => { setError(""); setAssignmentDrawer(true); }}>Assign schedule</Button><Button variant="primary" leading={<Plus size={14} />} onClick={() => { setError(""); setScheduleDrawer(true); }}>Create schedule</Button></div> : undefined} />
     {notice ? <div className="success-callout" role="status" style={{ marginBottom: 12 }}>{notice}</div> : null}
     {error && !scheduleDrawer && !assignmentDrawer ? <div className="form-error" role="alert" style={{ marginBottom: 12 }}>{error}</div> : null}
     <Panel>

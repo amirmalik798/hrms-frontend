@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { AlertCircle, CheckCircle2, Clock3, FileClock, RefreshCw, ShieldAlert, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock3, FileClock, ShieldAlert, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
 import { Field, TextArea } from "@/components/ui/Field";
@@ -13,6 +13,7 @@ import { apiRequest, pickArray, stringValue } from "@/lib/api-client";
 import { formatDate, humanize, getLocalISODate } from "@/lib/format";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { useAttendanceRefresh } from "@/lib/attendance-events";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 
 interface QueueItem extends Record<string, unknown> {
   id?: string; status?: string; firstName?: string; lastName?: string; employeeCode?: string;
@@ -52,8 +53,8 @@ export function ReviewQueueWorkspace() {
   const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true); setError("");
     const results = await Promise.all(available.map(async (key) => {
       try {
         const path = key === "excess"
@@ -71,10 +72,11 @@ export function ReviewQueueWorkspace() {
     }
     setItems(next);
     if (errors.length) setError(errors.join(" · "));
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [available, excessFromDate, excessToDate]);
   useEffect(() => { void load(); }, [load]);
-  useAttendanceRefresh(() => { void load(); });
+  useSmartRefresh(() => load(true), !selected && !saving);
+  useAttendanceRefresh(() => { void load(true); });
   const selectedItems = items[active];
   const pendingCount = selectedItems.filter((item) => ["PENDING", "OPEN"].includes(String(item.status ?? "").toUpperCase())).length;
 
@@ -105,7 +107,7 @@ export function ReviewQueueWorkspace() {
   }
 
   return <>
-    <PageHeader eyebrow="Time & approvals" title="Review queue" description="One focused place for attendance corrections, advance overtime requests, and excess-time reviews." action={<Button variant="secondary" leading={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>Refresh</Button>} />
+    <PageHeader eyebrow="Time & approvals" title="Review queue" description="One focused place for attendance corrections, advance overtime requests, and excess-time reviews." />
     {notice ? <div role="status" className="success-callout" style={{ marginBottom: 14 }}>{notice}</div> : null}
     {error ? <div className="info-callout" style={{ marginBottom: 14 }}><AlertCircle size={15} />Some queue sections could not be loaded. {error}</div> : null}
     {!workDate ? <div className="form-note" style={{ marginBottom: 14 }}>The organization work date could not be verified. The excess-time review list is using the device date for its date range; the backend remains authoritative for every review action.</div> : null}

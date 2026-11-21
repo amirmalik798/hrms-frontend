@@ -34,7 +34,6 @@ export function WorkspaceClock({ timeZone, timeZoneStatus, showAttendanceStatus 
   const [clock, setClock] = useState(() => formatClock(timeZone));
   const [status, setStatus] = useState<AttendanceStatus>(showAttendanceStatus ? "loading" : "unavailable");
   const [open, setOpen] = useState(false);
-  const [loadingStatus, setLoadingStatus] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState("");
   const [actionNotice, setActionNotice] = useState("");
@@ -73,7 +72,7 @@ export function WorkspaceClock({ timeZone, timeZoneStatus, showAttendanceStatus 
     };
     const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
     void refresh();
-    const timer = window.setInterval(onVisible, 10_000);
+    const timer = window.setInterval(onVisible, 5_000);
     window.addEventListener("focus", onVisible);
     window.addEventListener(ATTENDANCE_STATUS_CHANGED_EVENT, onVisible);
     document.addEventListener("visibilitychange", onVisible);
@@ -144,14 +143,6 @@ export function WorkspaceClock({ timeZone, timeZoneStatus, showAttendanceStatus 
     } finally { setSubmitting(false); }
   }
 
-  async function refreshStatus() {
-    if (loadingStatus) return;
-    setLoadingStatus(true); setActionError("");
-    try { setStatus(await readStatus()); }
-    catch (caught) { setStatus("unavailable"); setActionError(caught instanceof Error ? caught.message : "Unable to refresh attendance status."); }
-    finally { setLoadingStatus(false); }
-  }
-
   const statusLabel = status === "CLOCKED_IN" ? "Clocked in" : status === "CLOCKED_OUT" ? "Clocked out" : status === "loading" ? "Checking" : "Unavailable";
   const organizationTimeLabel = timeZoneStatus === "ready"
     ? `${clock.date} · ${timeZone}`
@@ -186,7 +177,7 @@ export function WorkspaceClock({ timeZone, timeZoneStatus, showAttendanceStatus 
       <section className="workspace-clock-dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-clock-title" ref={dialogRef} tabIndex={-1}>
         <header className="workspace-clock-dialog-header"><div><span className="workspace-clock-eyebrow">Attendance terminal</span><h2 id="workspace-clock-title">Your working time</h2></div><button type="button" className="workspace-clock-close" aria-label="Close attendance clock" disabled={submitting} onClick={() => setOpen(false)}><X size={18} /></button></header>
         <div className="workspace-clock-current"><div className="workspace-clock-current-icon"><Clock3 size={20} /></div><div><strong>{timeZoneStatus === "ready" ? clock.time : "--:--:--"}</strong><span>{organizationTimeLabel}</span></div></div>
-        <div className="workspace-clock-status-line"><span className={`workspace-clock-dot ${status === "CLOCKED_IN" ? "is-in" : status === "CLOCKED_OUT" ? "is-out" : "is-unknown"}`} /><span>Current status</span><strong>{statusLabel}</strong><button type="button" onClick={() => void refreshStatus()} disabled={loadingStatus || submitting} aria-label="Refresh attendance status">{loadingStatus ? <LoaderCircle size={15} className="spin" /> : <RefreshCwIcon />}</button></div>
+        <div className="workspace-clock-status-line"><span className={`workspace-clock-dot ${status === "CLOCKED_IN" ? "is-in" : status === "CLOCKED_OUT" ? "is-out" : "is-unknown"}`} /><span>Current status</span><strong>{statusLabel}</strong></div>
         {actionError ? <div className="workspace-clock-alert" role="alert"><AlertCircle size={15} /><span>{actionError}</span></div> : null}
         {actionNotice ? <div className="workspace-clock-success" role="status"><CheckCircle2 size={15} /><span>{actionNotice}</span></div> : null}
         <div className="workspace-clock-guidance">Your assigned shift and organization attendance rules are checked by the server. Clock-in may be restricted outside your permitted shift window; clock-out remains available to close an open session.</div>
@@ -220,4 +211,3 @@ export function WorkspaceClock({ timeZone, timeZoneStatus, showAttendanceStatus 
   </>;
 }
 
-function RefreshCwIcon() { return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5" /><path d="M5.6 9a7 7 0 0 1 11.6-2L20 12M4 12l2.8 5a7 7 0 0 0 11.6-2" /></svg>; }
