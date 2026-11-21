@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, CalendarDays } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, CalendarDays, Search } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
 import { Panel, PanelHeading } from "@/components/ui/Panel";
@@ -109,6 +109,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
   const [rangeRetry, setRangeRetry] = useState(0);
   const [appliedRangeRevision, setAppliedRangeRevision] = useState(0);
   const [selectedPreset, setSelectedPreset] = useState<"7d" | "14d" | "1m" | "3m" | "6m" | null>(null);
+  const [employeeSearch, setEmployeeSearch] = useState("");
   const loadSequenceRef = useRef(0);
   const [verifiedWorkDate, setVerifiedWorkDate] = useState<string | null>(workDate);
   const selfOnly = pageKey === "my-attendance" || user.role === "EMPLOYEE";
@@ -246,6 +247,19 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
     setError("");
   }
 
+  const filteredEntries = useMemo(() => {
+    if (selfOnly || !employeeSearch.trim()) return entries;
+    const query = employeeSearch.trim().toLocaleLowerCase();
+    return entries.filter((entry) => [
+      entry.firstName,
+      entry.lastName,
+      `${entry.firstName} ${entry.lastName}`,
+      entry.employeeCode,
+      entry.departmentName,
+      entry.scheduleName,
+    ].some((value) => String(value ?? "").toLocaleLowerCase().includes(query)));
+  }, [entries, employeeSearch, selfOnly]);
+
   const heading = selfOnly ? "My attendance" : "Attendance";
   const description = selfOnly ? "Your attendance record, expected shift, and worked time." : "Review expected shifts against recorded attendance across your authorized scope.";
   return <>
@@ -281,12 +295,16 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
           </div>
           <span className="field-hint" style={{ alignSelf: "center" }}>Choose From and To dates, then apply the custom range. Longer ranges are loaded in smaller calendar windows.</span>
         </div>
-        <span style={{ color: "var(--muted)", fontSize: 11 }}>{loading ? "Loading…" : `${entries.length} records`}</span>
+        <div className="toolbar-right" style={{ flexWrap: "wrap" }}>
+          {!selfOnly ? <label className="search-field attendance-employee-search"><Search size={14} /><input type="search" aria-label="Search attendance records" placeholder="Search employee, code, department or shift…" value={employeeSearch} onChange={(event) => setEmployeeSearch(event.target.value)} /></label> : null}
+          <span style={{ color: "var(--muted)", fontSize: 11 }}>{loading ? "Loading…" : employeeSearch.trim() && !selfOnly ? `${filteredEntries.length} of ${entries.length} records` : `${entries.length} records`}</span>
+        </div>
       </div>
       {loading && !entries.length ? <div style={{ padding: 20, display: "grid", gap: 12 }}>{[1,2,3,4,5].map((n) => <div key={n} className="skeleton" style={{ height: 44 }} />)}</div> : null}
       {!loading && !error && !entries.length ? <div className="empty-state"><div className="state-icon"><CalendarDays size={19} /></div><h3>No attendance entries</h3><p>There are no scheduled shifts, recorded events, or approved time-off entries in this period.</p></div> : null}
-      {entries.length ? <div className="table-wrap"><table className="data-table"><thead><tr>{!selfOnly ? <th>Employee</th> : null}<th>Work date</th><th>Shift</th><th>Expected</th><th>First in</th><th>Last out</th><th>Worked</th><th>Overtime</th><th>Status</th></tr></thead><tbody>
-        {entries.map((entry, index) => <tr key={`${entry.employeeId}-${entry.workDate}-${index}`}>
+      {entries.length > 0 && filteredEntries.length === 0 ? <div className="empty-state"><div className="state-icon"><Search size={18} /></div><h3>No matching attendance records</h3><p>Try another employee name, code, department or shift.</p><Button size="sm" variant="secondary" onClick={() => setEmployeeSearch("")}>Clear search</Button></div> : null}
+      {filteredEntries.length ? <div className="table-wrap"><table className="data-table"><thead><tr>{!selfOnly ? <th>Employee</th> : null}<th>Work date</th><th>Shift</th><th>Expected</th><th>First in</th><th>Last out</th><th>Worked</th><th>Overtime</th><th>Status</th></tr></thead><tbody>
+        {filteredEntries.map((entry, index) => <tr key={`${entry.employeeId}-${entry.workDate}-${index}`}>
           {!selfOnly ? <td><div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}><ProfilePhoto employeeId={entry.employeeId} currentUser={entry.employeeId === user.employeeId} name={`${entry.firstName} ${entry.lastName}`.trim()} className="user-avatar" /><span style={{ minWidth: 0 }}><span className="table-primary">{entry.firstName} {entry.lastName}</span><span className="table-secondary">{entry.employeeCode} · {entry.departmentName || "No department"}</span></span></div></td> : null}
           <td><span className="table-primary">{formatDate(entry.workDate, timeZone)}</span>{entry.leaveRequest ? <span className="table-secondary">{humanize(entry.leaveRequest.leaveType)} leave</span> : entry.publicHoliday ? <span className="table-secondary">{entry.publicHoliday.name}</span> : null}</td>
           <td>{entry.scheduleName || <span style={{ color: "var(--danger)", fontWeight: 650 }}>(No Shift Assigned)</span>}</td><td>{entry.expectedStart && entry.expectedEnd ? `${timeLabel(entry.expectedStart, timeZone)} – ${timeLabel(entry.expectedEnd, timeZone)}` : "—"}</td><td>{timeLabel(entry.firstClockIn, timeZone)}</td><td>{timeLabel(entry.lastClockOut, timeZone)}</td><td><span className="table-primary">{duration(entry.workedMinutes)}</span></td><td>{duration(entry.payableOvertimeMinutes)}</td><td><StatusBadge value={entry.calculationStatus || (entry.leaveRequest ? entry.leaveRequest.status : entry.publicHoliday ? "HOLIDAY" : "UNKNOWN")} /></td>

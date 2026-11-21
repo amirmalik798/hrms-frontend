@@ -16,6 +16,7 @@ import { buildSalarySlipDocument, type SalarySlipPayload } from "@/features/payr
 import { useSmartRefresh } from "@/lib/smart-refresh";
 import { useAttendanceRefresh } from "@/lib/attendance-events";
 import { PersonalEarningsWorkspace } from "@/features/workspace/PersonalEarningsWorkspace";
+import { assertSalarySlipUsesOrganizationCurrency, normalizeCurrencyCode, paymentUsesOrganizationCurrency } from "@/lib/payroll-currency";
 
 interface Payment {
   id?: string; employeeId: string; employeeCode?: string; firstName?: string; lastName?: string;
@@ -60,6 +61,7 @@ export function PayrollWorkspace() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const canManage = user.role === "ORGANIZATION_ADMIN" || user.role === "HR_MANAGER";
+  const organizationCurrencyCode = normalizeCurrencyCode(currencyCode);
   const currentOrganizationMonth = (workDate ?? new Date().toISOString().slice(0, 10)).slice(0, 7);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkStartMonth, setBulkStartMonth] = useState(month);
@@ -98,14 +100,26 @@ export function PayrollWorkspace() {
     const needle = search.trim().toLowerCase();
     return !needle || [item.firstName, item.lastName, item.employeeCode, item.departmentName, item.workforceRole, item.status, item.paymentReference].some((value) => String(value ?? "").toLowerCase().includes(needle));
   });
-  const paidTotal = payments.filter((item) => item.status === "PAID").reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
-  const dueTotal = payments.filter((item) => item.status === "UNPAID").reduce((sum, item) => sum + Number(item.calculatedAmount ?? 0), 0);
+  const paidPayments = payments.filter((item) => item.status === "PAID");
+  const duePayments = payments.filter((item) => item.status === "UNPAID");
+  const paidTotal = paidPayments.reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
+  const dueTotal = duePayments.reduce((sum, item) => sum + Number(item.calculatedAmount ?? 0), 0);
+  const paidCurrencyMismatch = paidPayments.some((item) => !paymentUsesOrganizationCurrency(item.currencyCode, organizationCurrencyCode, item.currencyMismatch));
+  const dueCurrencyMismatch = duePayments.some((item) => !paymentUsesOrganizationCurrency(item.currencyCode, organizationCurrencyCode, item.currencyMismatch));
   const payableCount = payments.filter((item) => item.status === "UNPAID" || item.status === "PAID").length;
-  const summaryCurrencyCode = user.role === "EMPLOYEE"
-    ? payments.find((item) => typeof item.currencyCode === "string" && item.currencyCode.trim())?.currencyCode ?? currencyCode
-    : currencyCode;
+  const needsAttentionCount = payments.filter((item) =>
+    ["RATE_REQUIRED", "CURRENCY_MISMATCH", "NO_RECORDED_HOURS"].includes(item.status) ||
+    !paymentUsesOrganizationCurrency(item.currencyCode, organizationCurrencyCode, item.currencyMismatch)
+  ).length;
+  const currencyMismatchCount = payments.filter((item) =>
+    !paymentUsesOrganizationCurrency(item.currencyCode, organizationCurrencyCode, item.currencyMismatch)
+  ).length;
 
   function openPayment(item: Payment) {
+    if (!paymentUsesOrganizationCurrency(item.currencyCode, organizationCurrencyCode, item.currencyMismatch)) {
+      setError("This payment cannot be updated because its pay-rate currency does not match the organization currency. Ask HR to review the employee’s pay-rate history.");
+      return;
+    }
     setSelected(item);
     setTargetStatus(item.status === "PAID" ? "UNPAID" : "PAID");
     setReference(item.paymentReference ?? "");
@@ -119,7 +133,7 @@ export function PayrollWorkspace() {
     setSaving(true); setError(""); setNotice("");
     try {
       await apiRequest("/payroll/payments", { method: "PUT", body: JSON.stringify({
-        employeeId: selected.employeeId, month, currencyCode: selected.currencyCode,
+        employeeId: selected.employeeId, month, currencyCode: organizationCurrencyCode ?? selected.currencyCode,
         status: targetStatus, paymentReference: reference.trim(), notes: notes.trim(),
       }) });
       setSelected(null);
@@ -144,6 +158,7 @@ export function PayrollWorkspace() {
       if (!result.employee || result.employee.id !== slipTarget.employeeId || result.startMonth !== slipStartMonth || result.endMonth !== slipEndMonth || !Array.isArray(result.months) || result.months.length !== count) {
         throw new Error("The individual salary-slip response was incomplete or did not match the selected month range.");
       }
+      assertSalarySlipUsesOrganizationCurrency(result, organizationCurrencyCode);
       setSlipPayload(result);
     } catch (caught) { setSlipError(caught instanceof Error ? caught.message : "Unable to load the individual salary slip."); }
     finally { setSlipLoading(false); }
@@ -164,6 +179,7 @@ export function PayrollWorkspace() {
       const latest = await apiRequest<SalarySlipPayload>(`/payroll/payslips/${encodeURIComponent(slipTarget.employeeId)}?${params.toString()}`);
       const count = monthOrdinal(slipEndMonth) - monthOrdinal(slipStartMonth) + 1;
       if (!latest.employee || latest.employee.id !== slipTarget.employeeId || latest.startMonth !== slipStartMonth || latest.endMonth !== slipEndMonth || !Array.isArray(latest.months) || latest.months.length !== count) throw new Error("The latest salary-slip data was incomplete. Reload the selected period and try again.");
+      assertSalarySlipUsesOrganizationCurrency(latest, organizationCurrencyCode);
       if (!printWindow.closed) {
         printWindow.document.open(); printWindow.document.write(buildSalarySlipDocument(latest)); printWindow.document.close();
         window.setTimeout(() => { if (!printWindow.closed) { printWindow.focus(); printWindow.print(); } }, 300);
@@ -219,6 +235,11 @@ export function PayrollWorkspace() {
             const name = `${employee.firstName} ${employee.lastName}`.trim() || employee.employeeCode || "Employee";
             throw new Error(`The salary-slip data for ${name} was incomplete or did not match the selected month range.`);
           }
+          try { assertSalarySlipUsesOrganizationCurrency(result, organizationCurrencyCode); }
+          catch (caught) {
+            const name = `${employee.firstName} ${employee.lastName}`.trim() || employee.employeeCode || "Employee";
+            throw new Error(`The salary slip for ${name} cannot be generated: ${caught instanceof Error ? caught.message : "currency mismatch"}`);
+          }
           return result;
         }));
         for (const result of results) slips.set(result.employee.id, result);
@@ -250,28 +271,31 @@ export function PayrollWorkspace() {
     {error ? <div role="alert" className="form-error" style={{ marginBottom: 14 }}>{error}</div> : null}
     {notice ? <div role="status" className="success-callout" style={{ marginBottom: 14 }}><CheckCircle2 size={15} />{notice}</div> : null}
     <div className="payroll-summary-grid" style={{ marginBottom: 16 }}>
-      <Panel className="metric-card"><div className="metric-icon"><Wallet size={17} /></div><div className="metric-label">Paid this month</div><div className="metric-value">{formatMoney(paidTotal, summaryCurrencyCode)}</div><div className="metric-foot">{payments.filter((item) => item.status === "PAID").length} recorded payments · {month}</div></Panel>
-      <Panel className="metric-card"><div className="metric-icon"><CircleDollarSign size={17} /></div><div className="metric-label">Outstanding amount</div><div className="metric-value">{formatMoney(dueTotal, summaryCurrencyCode)}</div><div className="metric-foot">{payments.filter((item) => item.status === "UNPAID").length} awaiting payment</div></Panel>
-      <Panel className="metric-card"><div className="metric-icon"><AlertCircle size={17} /></div><div className="metric-label">Needs attention</div><div className="metric-value">{payments.filter((item) => ["RATE_REQUIRED", "CURRENCY_MISMATCH", "NO_RECORDED_HOURS"].includes(item.status)).length}</div><div className="metric-foot">Rate, currency, or payable-hours issue</div></Panel>
+      <Panel className="metric-card"><div className="metric-icon"><Wallet size={17} /></div><div className="metric-label">Paid this month</div><div className="metric-value">{!organizationCurrencyCode ? "—" : paidCurrencyMismatch ? "—" : formatMoney(paidTotal, organizationCurrencyCode)}</div><div className="metric-foot">{!organizationCurrencyCode ? "Organization currency unavailable" : paidCurrencyMismatch ? "Currency mismatch — total withheld" : `${paidPayments.length} recorded payments · ${month}`}</div></Panel>
+      <Panel className="metric-card"><div className="metric-icon"><CircleDollarSign size={17} /></div><div className="metric-label">Outstanding amount</div><div className="metric-value">{!organizationCurrencyCode ? "—" : dueCurrencyMismatch ? "—" : formatMoney(dueTotal, organizationCurrencyCode)}</div><div className="metric-foot">{!organizationCurrencyCode ? "Organization currency unavailable" : dueCurrencyMismatch ? "Currency mismatch — total withheld" : `${duePayments.length} awaiting payment`}</div></Panel>
+      <Panel className="metric-card"><div className="metric-icon"><AlertCircle size={17} /></div><div className="metric-label">Needs attention</div><div className="metric-value">{needsAttentionCount}</div><div className="metric-foot">{currencyMismatchCount ? `${currencyMismatchCount} currency mismatch(es)` : "Rate, currency, or payable-hours issue"}</div></Panel>
     </div>
     <Panel>
-      <div className="toolbar"><div className="toolbar-left" style={{ flexWrap: "wrap" }}><label className="field" style={{ minWidth:160 }}><span className="field-label">Pay month</span><input className="text-input" type="month" value={month} max={currentOrganizationMonth} onChange={(e) => { setMonthTouchedByUser(true); setMonth(e.target.value); }} /></label>{user.role !== "EMPLOYEE" ? <label className="search-field" style={{ maxWidth:320 }}><SearchIcon /><input aria-label="Search salary payments" placeholder="Search employee, department, reference…" value={search} onChange={(e) => setSearch(e.target.value)} /></label> : null}{canManage ? <Button size="sm" variant="secondary" leading={<FileDown size={14} />} onClick={() => { setBulkStartMonth(month); setBulkEndMonth(month); setBulkError(""); setBulkOpen((value) => !value); }}>{bulkOpen ? "Close multi-month slips" : "Multi-month salary slips"}</Button> : null}</div><div className="toolbar-right"><span className="date-chip"><CalendarDays size={13} /> {timeZone}</span><span style={{ color:"var(--muted)", fontSize:11 }}>{loading ? "Loading…" : `${payments.length} employees · ${payableCount} payable`}</span></div></div>
+      <div className="toolbar"><div className="toolbar-left" style={{ flexWrap: "wrap" }}><label className="field" style={{ minWidth:160 }}><span className="field-label">Pay month</span><input className="text-input" type="month" value={month} max={currentOrganizationMonth} onChange={(e) => { setMonthTouchedByUser(true); setMonth(e.target.value); }} /></label>{user.role !== "EMPLOYEE" ? <label className="search-field" style={{ maxWidth:320 }}><SearchIcon /><input aria-label="Search salary payments" placeholder="Search employee, department, reference…" value={search} onChange={(e) => setSearch(e.target.value)} /></label> : null}{canManage ? <Button size="sm" variant="secondary" leading={<FileDown size={14} />} onClick={() => { setBulkStartMonth(month); setBulkEndMonth(month); setBulkError(""); setBulkOpen((value) => !value); }}>{bulkOpen ? "Close multi-month slips" : "Multi-month salary slips"}</Button> : null}</div><div className="toolbar-right"><span className="date-chip"><CalendarDays size={13} /> {timeZone}</span><span className="date-chip"><CircleDollarSign size={13} /> {organizationCurrencyCode || "Currency not configured"}</span><span style={{ color:"var(--muted)", fontSize:11 }}>{loading ? "Loading…" : `${payments.length} employees · ${payableCount} payable`}</span></div></div>
       {bulkOpen && canManage ? <div style={{ padding: "16px 0 18px", borderBottom: "1px solid var(--border)", marginBottom: 16 }}><div className="info-callout" style={{ marginBottom: 13 }}>Generate a combined, print-ready salary statement for every employee in your authorized payroll scope. This is a read-only report and does not change payment records.</div><div className="toolbar-left" style={{ alignItems: "end", flexWrap: "wrap" }}><label className="field" style={{ minWidth: 160 }}><span className="field-label">From month</span><input className="text-input" type="month" min="2000-01" max={bulkEndMonth || currentOrganizationMonth} value={bulkStartMonth} disabled={bulkBusy} onChange={(event) => { setBulkStartMonth(event.target.value); setBulkError(""); }} /></label><label className="field" style={{ minWidth: 160 }}><span className="field-label">To month</span><input className="text-input" type="month" min={bulkStartMonth || "2000-01"} max={currentOrganizationMonth} value={bulkEndMonth} disabled={bulkBusy} onChange={(event) => { setBulkEndMonth(event.target.value); setBulkError(""); }} /></label><Button variant="primary" leading={<FileDown size={15} />} busy={bulkBusy} disabled={!bulkStartMonth || !bulkEndMonth} onClick={() => void generateMultiMonthPayslips()}>Generate combined payslips</Button></div>{bulkProgress ? <p className="field-hint" role="status" style={{ marginTop: 10 }}>{bulkProgress}</p> : null}{bulkError ? <div className="form-error" role="alert" style={{ marginTop: 10 }}>{bulkError}</div> : null}</div> : null}
       {loading && !payments.length ? <div className="loading-state">Calculating monthly salary records…</div> : null}
       {!loading && !error && !visible.length ? <div className="empty-state"><div className="state-icon"><BadgeDollarSign size={18} /></div><h3>No salary records for this period</h3><p>There are no payment or payable-work records available for {month} in your authorized scope.</p></div> : null}
-      {visible.length ? <div className="table-wrap"><table className="data-table"><thead><tr>{user.role !== "EMPLOYEE" ? <th>Employee</th> : null}<th>Hours</th><th>Calculated amount</th><th>Status</th><th>Payment reference</th><th>Paid date</th><th /></tr></thead><tbody>{visible.map((item) => <tr key={item.employeeId}>
+      {visible.length ? <div className="table-wrap"><table className="data-table"><thead><tr>{user.role !== "EMPLOYEE" ? <th>Employee</th> : null}<th>Hours</th><th>Calculated amount</th><th>Status</th><th>Payment reference</th><th>Paid date</th><th /></tr></thead><tbody>{visible.map((item) => {
+        const currencyMatches = paymentUsesOrganizationCurrency(item.currencyCode, organizationCurrencyCode, item.currencyMismatch);
+        return <tr key={item.employeeId}>
         {user.role !== "EMPLOYEE" ? <td><div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}><ProfilePhoto employeeId={item.employeeId} name={`${item.firstName || ""} ${item.lastName || ""}`.trim() || item.employeeCode || "Employee"} className="user-avatar" /><span style={{ minWidth: 0 }}><span className="table-primary">{item.firstName} {item.lastName}</span><span className="table-secondary">{item.employeeCode} · {item.departmentName || humanize(item.workforceRole)}</span></span></div></td> : null}
         <td><span className="table-primary">{duration(item.workedMinutes)}</span><span className="table-secondary">{duration(item.payableMinutes)} payable</span></td>
-        <td><span className="table-primary">{formatMoney(item.calculatedAmount, item.currencyCode)}</span>{item.status === "PAID" ? <span className="table-secondary">Recorded: {formatMoney(item.amount, item.currencyCode)}</span> : null}</td>
-        <td><StatusBadge value={item.status} /></td><td>{item.paymentReference || "—"}</td><td>{item.paidAt ? formatDate(item.paidAt, timeZone) : "—"}</td>
-        <td><div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 6, flexWrap: "wrap" }}>{canManage ? <Button size="sm" variant="ghost" leading={<FileDown size={13} />} onClick={() => openIndividualSlip(item)}>Payslip</Button> : null}{canManage && ["UNPAID", "PAID"].includes(item.status) && item.calculatedAmount !== null ? <Button size="sm" variant={item.status === "PAID" ? "ghost" : "secondary"} onClick={() => openPayment(item)}>{item.status === "PAID" ? "Reverse paid" : "Record paid"}</Button> : null}</div></td>
-      </tr>)}</tbody></table></div> : null}
+        <td><span className="table-primary">{!currencyMatches ? "Amount withheld" : formatMoney(item.calculatedAmount, organizationCurrencyCode)}</span>{!currencyMatches ? <span className="table-secondary currency-mismatch-text">Pay-rate currency {normalizeCurrencyCode(item.currencyCode) || "unavailable"} does not match organization currency {organizationCurrencyCode || "not configured"}.</span> : item.status === "PAID" ? <span className="table-secondary">Recorded: {formatMoney(item.amount, organizationCurrencyCode)}</span> : null}</td>
+        <td><StatusBadge value={item.status} />{!currencyMatches ? <span className="table-secondary currency-mismatch-text">Currency mismatch</span> : null}</td><td>{item.paymentReference || "—"}</td><td>{item.paidAt ? formatDate(item.paidAt, timeZone) : "—"}</td>
+        <td><div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 6, flexWrap: "wrap" }}>{canManage && currencyMatches ? <Button size="sm" variant="ghost" leading={<FileDown size={13} />} onClick={() => openIndividualSlip(item)}>Payslip</Button> : null}{canManage && currencyMatches && ["UNPAID", "PAID"].includes(item.status) && item.calculatedAmount !== null ? <Button size="sm" variant={item.status === "PAID" ? "ghost" : "secondary"} onClick={() => openPayment(item)}>{item.status === "PAID" ? "Reverse paid" : "Record paid"}</Button> : null}</div></td>
+      </tr>;
+      })}</tbody></table></div> : null}
       <div className="table-footer"><span>Payment records are scoped by your role and department.</span><span>Calculations are provided by the backend; HRMS does not transfer money.</span></div>
     </Panel>
     {user.role === "EMPLOYEE" ? <div style={{ marginTop: 16 }}><PersonalEarningsWorkspace embedded monthOverride={month} /></div> : null}
     <Drawer open={Boolean(selected)} title={targetStatus === "PAID" ? "Record salary as paid" : "Reverse paid status"} description="Review the employee, amount, currency, and period before recording a payment status change." onClose={() => setSelected(null)} width="standard" footer={<><Button variant="secondary" onClick={() => setSelected(null)}>Cancel</Button><Button variant={targetStatus === "PAID" ? "primary" : "danger"} busy={saving} onClick={() => document.querySelector<HTMLFormElement>("#salary-payment-form")?.requestSubmit()}>{targetStatus === "PAID" ? "Confirm paid status" : "Confirm reversal"}</Button></>}>
       {selected ? <form id="salary-payment-form" onSubmit={savePayment}>
-        <div className="detail-list" style={{ marginBottom:17 }}><div><span>Employee</span><strong>{selected.firstName} {selected.lastName} · {selected.employeeCode}</strong></div><div><span>Pay period</span><strong>{month}</strong></div><div><span>Calculated payable amount</span><strong style={{ fontSize:18 }}>{formatMoney(selected.calculatedAmount, selected.currencyCode)}</strong></div><div><span>Worked hours</span><strong>{duration(selected.workedMinutes)}</strong></div><div><span>New status</span><strong>{targetStatus === "PAID" ? "Paid" : "Unpaid"}</strong></div></div>
+        <div className="detail-list" style={{ marginBottom:17 }}><div><span>Employee</span><strong>{selected.firstName} {selected.lastName} · {selected.employeeCode}</strong></div><div><span>Pay period</span><strong>{month}</strong></div><div><span>Calculated payable amount</span><strong style={{ fontSize:18 }}>{formatMoney(selected.calculatedAmount, organizationCurrencyCode)}</strong></div><div><span>Worked hours</span><strong>{duration(selected.workedMinutes)}</strong></div><div><span>New status</span><strong>{targetStatus === "PAID" ? "Paid" : "Unpaid"}</strong></div></div>
         <Field label="Payment reference" hint="Optional · up to 120 characters"><TextInput maxLength={120} value={reference} onChange={(e) => setReference(e.target.value)} /></Field>
         <Field label="Notes" hint="Optional · up to 1,000 characters"><TextArea maxLength={1000} rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
         <div className="form-note"><AlertCircle size={15} /> This records the payment state only. Confirm that the actual payment has been made outside HRMS before marking it paid.</div>

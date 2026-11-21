@@ -152,7 +152,7 @@ export function WorkforceWorkspace() {
         {rows.map((person) => <tr key={person.id} onDoubleClick={() => void openDetails(person.id)} style={{ cursor: "pointer" }}>
           <td><button type="button" onClick={() => void openDetails(person.id)} style={{ display: "flex", alignItems: "center", gap: 10, border: 0, padding: 0, background: "transparent", textAlign: "left" }}><ProfilePhoto name={`${person.first_name} ${person.last_name}`} employeeId={person.id} className="user-avatar" /><span><span className="table-primary">{person.first_name} {person.last_name}</span><span className="table-secondary">{person.employee_code} · {person.email}</span></span></button></td>
           <td><span className="table-primary">{roleDisplay[person.workforce_role] ?? humanize(person.workforce_role)}</span><span className="table-secondary">{person.department_name || "No department"}</span></td>
-          <td>{person.manager_name ? <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}><ProfilePhoto name={person.manager_name} employeeId={person.manager_id} /><span className="table-primary">{person.manager_name}</span></div> : <span style={{ color: "var(--subtle)" }}>Not assigned</span>}</td>
+          <td>{person.manager_name ? <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}><ProfilePhoto name={person.manager_name} employeeId={person.manager_id} currentUser={Boolean(person.manager_id && person.manager_id === user.employeeId)} /><span className="table-primary">{person.manager_name}</span></div> : <span style={{ color: "var(--subtle)" }}>Not assigned</span>}</td>
           <td><StatusBadge value={person.employment_status} /></td>
           <td>{person.invitation_status ? <StatusBadge value={person.invitation_status} /> : <span style={{ color: "var(--subtle)" }}>—</span>}</td>
           <td><div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4, flexWrap: "wrap" }}><button type="button" className="icon-button" aria-label={`View ${person.first_name} ${person.last_name}`} onClick={() => void openDetails(person.id)}><Eye size={15} /></button>{canEdit ? <button type="button" className="icon-button" aria-label={`Edit ${person.first_name} ${person.last_name}`} onClick={() => void openDetails(person.id, "edit")}><Pencil size={15} /></button> : null}{canChangeStatus && person.employment_status !== "FORMER" && (user.role !== "DEPARTMENT_MANAGER" || person.workforce_role === "EMPLOYEE") && !(person.is_primary_hr_manager === true && person.employment_status === "ACTIVE") ? <button type="button" className={`icon-button status-icon-action ${person.employment_status === "ACTIVE" ? "status-action-deactivate" : "status-action-activate"}`} title={person.employment_status === "ACTIVE" ? "Deactivate workforce member" : "Activate workforce member"} aria-label={person.employment_status === "ACTIVE" ? `Deactivate ${person.first_name} ${person.last_name}` : `Activate ${person.first_name} ${person.last_name}`} onClick={() => setStatusTarget(person)}>{person.employment_status === "ACTIVE" ? <UserX size={16} /> : <UserCheck size={16} />}</button> : null}</div></td>
@@ -160,8 +160,38 @@ export function WorkforceWorkspace() {
       </tbody></table></div><div className="table-footer"><span>Showing {Math.min((page - 1) * 50 + 1, total)}–{Math.min(page * 50, total)} of {total} people</span><div style={{ display: "flex", gap: 7 }}><Button size="sm" disabled={page <= 1 || loading} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</Button><Button size="sm" disabled={page >= totalPages || loading} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Next</Button></div></div></> : null}
     </Panel>
 
-    <Drawer open={Boolean(statusTarget)} title={statusTarget?.employment_status === "ACTIVE" ? "Deactivate workforce member?" : "Activate workforce member?"} description={statusTarget?.employment_status === "ACTIVE" ? "The member’s employment will become inactive. The backend will synchronize the linked account and invalidate existing sessions as required." : "The backend will verify the linked account, password, organization status and role eligibility before reactivating employment."} onClose={() => { if (!statusSaving) setStatusTarget(null); }} width="standard" footer={<><Button variant="secondary" disabled={statusSaving} onClick={() => setStatusTarget(null)}>Cancel</Button><Button variant={statusTarget?.employment_status === "ACTIVE" ? "danger" : "primary"} busy={statusSaving} onClick={() => void confirmEmploymentStatusChange()}>{statusTarget?.employment_status === "ACTIVE" ? "Confirm deactivation" : "Confirm activation"}</Button></>}>
-      {statusTarget ? <div className="form-section"><div className="detail-list"><div><span>Workforce member</span><strong>{statusTarget.first_name} {statusTarget.last_name}</strong></div><div><span>Employee code</span><strong>{statusTarget.employee_code}</strong></div><div><span>Current employment status</span><strong>{humanize(statusTarget.employment_status)}</strong></div></div>{statusTarget.employment_status === "FORMER" ? <p className="form-note">Former employees cannot be reactivated through this action. Use the supported rehire workflow.</p> : null}</div> : null}
+    <Drawer open={Boolean(statusTarget)} title={statusTarget?.employment_status === "ACTIVE" ? "Deactivate workforce member?" : "Activate workforce member?"} description="Review the employment status change before confirming." onClose={() => { if (!statusSaving) setStatusTarget(null); }} width="standard" footer={<><Button variant="secondary" disabled={statusSaving} onClick={() => setStatusTarget(null)}>Cancel</Button><Button variant={statusTarget?.employment_status === "ACTIVE" ? "danger" : "primary"} busy={statusSaving} onClick={() => void confirmEmploymentStatusChange()}>{statusTarget?.employment_status === "ACTIVE" ? "Confirm deactivation" : "Confirm activation"}</Button></>}>
+      {statusTarget ? (() => {
+        const deactivating = statusTarget.employment_status === "ACTIVE";
+        const nextStatus = deactivating ? "INACTIVE" : "ACTIVE";
+        return <div className="workforce-status-confirmation">
+          <div className={`workforce-status-intro ${deactivating ? "workforce-status-intro-danger" : "workforce-status-intro-success"}`}>
+            <span className="workforce-status-intro-icon">{deactivating ? <UserX size={20} /> : <UserCheck size={20} />}</span>
+            <div>
+              <strong>{deactivating ? "You are about to deactivate this member" : "You are about to activate this member"}</strong>
+              <p>{deactivating ? "Their employment status and linked account access will be updated by the backend." : "The backend will recheck eligibility before restoring active employment."}</p>
+            </div>
+          </div>
+          <div className="workforce-status-member">
+            <ProfilePhoto name={`${statusTarget.first_name} ${statusTarget.last_name}`.trim()} employeeId={statusTarget.id} className="user-avatar" />
+            <div className="workforce-status-member-copy">
+              <strong>{statusTarget.first_name} {statusTarget.last_name}</strong>
+              <span>{statusTarget.employee_code || "No employee code"}</span>
+            </div>
+          </div>
+          <div className="workforce-status-transition">
+            <div><span>Current status</span><StatusBadge value={statusTarget.employment_status} /></div>
+            <div><span>After confirmation</span><StatusBadge value={nextStatus} /></div>
+          </div>
+          <div className="workforce-status-impact">
+            <ShieldCheck size={17} />
+            <div>
+              <strong>{deactivating ? "Account and session impact" : "Reactivation checks"}</strong>
+              <p>{deactivating ? "The linked account is synchronized and existing sessions are invalidated as required. This action does not delete the workforce record or its history." : "The backend verifies the linked account, password, organization status and role eligibility. If any check fails, the member remains inactive."}</p>
+            </div>
+          </div>
+        </div>;
+      })() : null}
     </Drawer>
     <EmployeeDrawer open={drawerMode === "create" || drawerMode === "edit"} mode={drawerMode === "edit" ? "edit" : "create"} employee={selected} loading={detailLoading} departments={departments} managers={managerOptions} onClose={() => { setDrawerMode(null); setSelectedId(null); }} onSaved={() => { setDrawerMode(null); setSelectedId(null); setNotice("Workforce record saved."); void load(); setTimeout(() => setNotice(""), 4500); }} />
     <EmployeeDetailsDrawer open={drawerMode === "details"} employee={selected} loading={detailLoading} error={error} canInvite={canInvite} onClose={() => { setDrawerMode(null); setSelectedId(null); setError(""); }} onInviteComplete={() => { setNotice("Invitation sent successfully."); void load(); setTimeout(() => setNotice(""), 4500); }} onEdit={canEdit ? () => { if (selectedId) void openDetails(selectedId, "edit"); } : undefined} />
@@ -237,6 +267,7 @@ function EmployeeDrawer({ open, mode, employee, loading, departments, managers, 
 function EmployeeDetailsDrawer({ open, employee, loading, error, canInvite, onClose, onInviteComplete, onEdit }: { open: boolean; employee: Employee | null; loading: boolean; error: string; canInvite: boolean; onClose: () => void; onInviteComplete: () => void; onEdit?: () => void }) {
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState("");
+  const { user } = useWorkspace();
   const name = employee ? `${employee.first_name} ${employee.last_name}`.trim() : "Workforce member";
   const invitationStatus = (employee?.invitation_status || "").toUpperCase();
   const inviteEligible = Boolean(employee && employee.employment_status !== "FORMER" && !["PENDING", "ACCEPTED"].includes(invitationStatus));
@@ -255,7 +286,7 @@ function EmployeeDetailsDrawer({ open, employee, loading, error, canInvite, onCl
     {loading ? <div className="loading-state">Loading profile details…</div> : error ? <div className="error-state"><h3>Details unavailable</h3><p>{error}</p></div> : employee ? <>
       <div style={{ display: "flex", alignItems: "center", gap: 13, marginBottom: 24 }}><ProfilePhoto name={name} employeeId={employee.id} className="user-avatar" /><div><h3 style={{ fontSize: 17, margin: 0, color: "var(--text-strong)" }}>{name}</h3><p style={{ color: "var(--muted)", fontSize: 11, margin: "3px 0 0" }}>{employee.employee_code} · {roleDisplay[employee.workforce_role] ?? humanize(employee.workforce_role)}</p></div></div>
       <div className="form-grid" style={{ marginBottom: 20 }}><Detail label="Employment status"><StatusBadge value={employee.employment_status} /></Detail><Detail label="Invitation status"><StatusBadge value={employee.invitation_status ?? "NOT_SENT"} /></Detail></div>
-      <DetailSection title="Work information"><Detail label="Job title" value={employee.designation} /><Detail label="Department" value={employee.department_name || "Not assigned"} /><Detail label="Joining date" value={formatDate(employee.joining_date)} /></DetailSection>{employee.manager_name ? <section className="form-section"><h3 className="form-section-title">Reporting manager</h3><div style={{ display: "flex", alignItems: "center", gap: 10 }}><ProfilePhoto name={employee.manager_name} employeeId={employee.manager_id} /><strong style={{ color: "var(--text-strong)", fontSize: 12 }}>{employee.manager_name}</strong></div></section> : null}
+      <DetailSection title="Work information"><Detail label="Job title" value={employee.designation} /><Detail label="Department" value={employee.department_name || "Not assigned"} /><Detail label="Joining date" value={formatDate(employee.joining_date)} /></DetailSection>{employee.manager_name ? <section className="form-section"><h3 className="form-section-title">Reporting manager</h3><div style={{ display: "flex", alignItems: "center", gap: 10 }}><ProfilePhoto name={employee.manager_name} employeeId={employee.manager_id} currentUser={Boolean(employee.manager_id && employee.manager_id === user.employeeId)} /><strong style={{ color: "var(--text-strong)", fontSize: 12 }}>{employee.manager_name}</strong></div></section> : null}
       <DetailSection title="Contact details"><Detail label="Email" value={employee.email} /><Detail label="Phone" value={employee.phone} /><Detail label="Location" value={[employee.city, employee.country].filter(Boolean).join(", ")} /></DetailSection>
       {employee.emergency_contact_name || employee.emergency_contact_phone ? <DetailSection title="Emergency contact"><Detail label="Name" value={employee.emergency_contact_name} /><Detail label="Relationship" value={employee.emergency_contact_relationship} /><Detail label="Phone" value={employee.emergency_contact_phone} /></DetailSection> : null}
       {Array.isArray(employee.managed_departments) && employee.managed_departments.length ? <DetailSection title="Managed departments"><div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{employee.managed_departments.map((d) => <StatusBadge key={d.id} label={d.name} value={d.status ?? "ACTIVE"} />)}</div></DetailSection> : null}

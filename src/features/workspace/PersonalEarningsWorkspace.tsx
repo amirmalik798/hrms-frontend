@@ -12,6 +12,8 @@ import { formatDate, formatMoney, humanize } from "@/lib/format";
 import { buildSalarySlipDocument, type SalarySlipPayload } from "@/features/payroll/salary-slip-document";
 import { useAttendanceRefresh } from "@/lib/attendance-events";
 import { useSmartRefresh } from "@/lib/smart-refresh";
+import { assertSalarySlipUsesOrganizationCurrency, normalizeCurrencyCode } from "@/lib/payroll-currency";
+import { CircleDollarSign } from "lucide-react";
 
 interface EarningsDay {
   workDate: string; scheduleName: string | null; isPaidLeave: boolean; isPaidHoliday: boolean;
@@ -93,7 +95,16 @@ export function PersonalEarningsWorkspace({ embedded = false, monthOverride }: {
 
   const summary = data?.summary;
   const days = Array.isArray(data?.days) ? data.days : [];
-  const currency = data?.currencyCode || currencyCode;
+  const organizationCurrencyCode = normalizeCurrencyCode(currencyCode);
+  const rateCurrencyCodes = Array.from(new Set([
+    data?.currencyCode,
+    ...days.map((day) => day.currencyCode),
+    ...(summary?.currencyCodes ?? []),
+  ].map((value) => normalizeCurrencyCode(value)).filter((value): value is string => Boolean(value))));
+  const mismatchedCurrencyCodes = organizationCurrencyCode
+    ? rateCurrencyCodes.filter((value) => value !== organizationCurrencyCode)
+    : [];
+  const hasCurrencyMismatch = Boolean(summary?.currencyMismatch || mismatchedCurrencyCodes.length);
   const incompleteRateDays = useMemo(() => days.filter((day) => day.payableMinutes > 0 && day.estimatedPay === null).length, [days]);
   const zone = data?.timeZone || timeZone;
 
@@ -117,6 +128,7 @@ export function PersonalEarningsWorkspace({ embedded = false, monthOverride }: {
       if (!result.employee || result.employee.id !== user.employeeId || result.startMonth !== slipFromMonth || result.endMonth !== slipToMonth || !Array.isArray(result.months) || result.months.length !== count) {
         throw new Error("The payslip data was incomplete or did not match the selected monthly period.");
       }
+      assertSalarySlipUsesOrganizationCurrency(result, organizationCurrencyCode);
       if (printWindow.closed) {
         setSlipNotice("Your salary-slip data was prepared, but the print window was closed. Generate it again to print or save it.");
         return;
@@ -135,17 +147,17 @@ export function PersonalEarningsWorkspace({ embedded = false, monthOverride }: {
     {!embedded ? <PageHeader eyebrow="My account · Compensation" title="My earnings" description="Your personal earnings estimate from recorded working time and approved overtime." /> : null}
     {!embedded ? <div className="toolbar" style={{ marginBottom: 14 }}>
       <label className="field" style={{ maxWidth: 190 }}><span className="field-label">Pay period</span><input className="text-input" type="month" value={month} onChange={(event) => { setOwnMonth(event.target.value); setMonthChanged(true); }} /></label>
-      <span className="date-chip"><CalendarDays size={13} /> {zone}</span><span style={{ marginLeft: "auto" }} />
+      <span className="date-chip"><CalendarDays size={13} /> {zone}</span><span className="date-chip"><CircleDollarSign size={13} /> {organizationCurrencyCode || "Currency not configured"}</span><span style={{ marginLeft: "auto" }} />
       <span style={{ color: "var(--muted)", fontSize: 12 }}>{data?.employeeName || user.displayName}</span>
     </div> : null}
     {error ? <div role="alert" className="form-error" style={{ marginBottom: 14 }}>{error}</div> : null}
     {!error && summary ? <>
       {!embedded ? <div className="page-grid grid-3" style={{ marginBottom: 16 }}>
-        <Panel className="metric-card"><div className="metric-icon"><Wallet size={17} /></div><div className="metric-label">Estimated earnings</div><div className="metric-value">{formatMoney(summary.estimatedSalary, currency)}</div><div className="metric-foot">For {month} · not a final payslip</div></Panel>
+        <Panel className="metric-card"><div className="metric-icon"><Wallet size={17} /></div><div className="metric-label">Estimated earnings</div><div className="metric-value">{!organizationCurrencyCode || hasCurrencyMismatch ? "—" : formatMoney(summary.estimatedSalary, organizationCurrencyCode)}</div><div className="metric-foot">{!organizationCurrencyCode ? "Organization currency unavailable" : hasCurrencyMismatch ? "Currency mismatch — estimate withheld" : `For ${month} · not a final payslip`}</div></Panel>
         <Panel className="metric-card"><div className="metric-icon"><Clock3 size={17} /></div><div className="metric-label">Recorded work</div><div className="metric-value">{duration(summary.totalWorkedMinutes)}</div><div className="metric-foot">{summary.daysWorked} days with recorded work</div></Panel>
         <Panel className="metric-card"><div className="metric-icon"><CalendarDays size={17} /></div><div className="metric-label">Approved overtime</div><div className="metric-value">{duration(summary.payableOvertimeMinutes)}</div><div className="metric-foot">Potential unapproved overtime: {duration(summary.excessUnapprovedOvertimeMinutes)}</div></Panel>
       </div> : null}
-      {summary.currencyMismatch ? <div className="form-error" role="alert" style={{ marginBottom: 14 }}>More than one currency appears in this period ({summary.currencyCodes.join(", ")}). The total is withheld until the pay-rate history is consistent.</div> : null}
+      {!organizationCurrencyCode ? <div className="form-error" role="alert" style={{ marginBottom: 14 }}>The organization's configured currency could not be verified. Monetary amounts are withheld until the organization currency is available.</div> : hasCurrencyMismatch ? <div className="form-error" role="alert" style={{ marginBottom: 14 }}>Pay-rate currency {mismatchedCurrencyCodes.length ? mismatchedCurrencyCodes.join(", ") : (summary.currencyCodes ?? rateCurrencyCodes).join(", ") || "is inconsistent"} does not match the organization's configured currency ({organizationCurrencyCode}). Affected estimates and payslips are withheld until HR reviews the pay-rate history.</div> : null}
       {incompleteRateDays > 0 || summary.daysWithMissingRates > 0 || !data?.hasRates ? <div className="info-callout" style={{ marginBottom: 14 }}><AlertCircle size={15} /><span>Some payable time does not have a complete effective pay rate. Affected amounts are not estimated. Ask HR to review your pay-rate history.</span></div> : null}
       {data?.disclaimer ? <div className="info-callout" style={{ marginBottom: 14 }}>{data.disclaimer}</div> : null}
     </> : null}
@@ -154,15 +166,19 @@ export function PersonalEarningsWorkspace({ embedded = false, monthOverride }: {
       <div id="employee-daily-earnings-content" hidden={!dailyBreakdownOpen}>
       {loading && !days.length ? <div className="loading-state">Calculating your earnings…</div> : null}
       {!loading && !error && !days.length ? <div className="empty-state"><div className="state-icon"><Wallet size={18} /></div><h3>No earnings details for this period</h3><p>Your daily schedule and attendance details will appear here when available.</p></div> : null}
-      {days.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Work date</th><th>Schedule</th><th>Clock in / out</th><th>Worked</th><th>Approved OT</th><th>Daily earnings</th><th>Status</th></tr></thead><tbody>{days.map((day) => <tr key={day.workDate}>
+      {days.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Work date</th><th>Schedule</th><th>Clock in / out</th><th>Worked</th><th>Approved OT</th><th>Daily earnings</th><th>Status</th></tr></thead><tbody>{days.map((day) => {
+        const dayCurrency = normalizeCurrencyCode(day.currencyCode || data?.currencyCode);
+        const dayCurrencyMismatch = !organizationCurrencyCode || Boolean(dayCurrency && dayCurrency !== organizationCurrencyCode);
+        return <tr key={day.workDate}>
         <td><span className="table-primary">{formatDate(day.workDate, zone)}</span></td>
         <td>{day.scheduleName || "No shift"}{day.isPaidLeave ? <span className="table-secondary">Paid leave</span> : day.isPaidHoliday ? <span className="table-secondary">Paid holiday</span> : null}</td>
         <td><span className="table-primary">{formatTime(day.clockIn, zone)}</span><span className="table-secondary">{formatTime(day.clockOut, zone)}</span></td>
         <td><span className="table-primary">{duration(day.workedMinutes)}</span><span className="table-secondary">{duration(day.payableMinutes)} payable</span></td>
         <td>{duration(day.payableOvertimeMinutes)}{day.excessUnapprovedOvertimeMinutes > 0 ? <span className="table-secondary">{duration(day.excessUnapprovedOvertimeMinutes)} unapproved</span> : null}</td>
-        <td><span className="table-primary">{formatMoney(day.estimatedPay, day.currencyCode || currency)}</span><span className="table-secondary">Regular {formatMoney(day.regularPay, day.currencyCode || currency)} · OT {formatMoney(day.overtimePay, day.currencyCode || currency)}</span><span className="table-secondary">Hourly rate: {day.hourlyRate === null ? "Not configured" : `${formatMoney(day.hourlyRate, day.currencyCode || currency)} / hour`}</span><span className="table-secondary">Overtime rate: {day.overtimeRate === null ? "Not configured" : `${formatMoney(day.overtimeRate, day.currencyCode || currency)} / hour`}</span></td>
+        <td>{dayCurrencyMismatch ? <span className="table-secondary currency-mismatch-text">{organizationCurrencyCode ? "Currency mismatch — amount withheld" : "Organization currency unavailable"}</span> : <><span className="table-primary">{formatMoney(day.estimatedPay, organizationCurrencyCode)}</span><span className="table-secondary">Regular {formatMoney(day.regularPay, organizationCurrencyCode)} · OT {formatMoney(day.overtimePay, organizationCurrencyCode)}</span><span className="table-secondary">Hourly rate: {day.hourlyRate === null ? "Not configured" : `${formatMoney(day.hourlyRate, organizationCurrencyCode)} / hour`}</span><span className="table-secondary">Overtime rate: {day.overtimeRate === null ? "Not configured" : `${formatMoney(day.overtimeRate, organizationCurrencyCode)} / hour`}</span></>}</td>
         <td><StatusBadge value={day.calculationStatus || (day.isPaidLeave ? "PAID_LEAVE" : day.isPaidHoliday ? "PAID_HOLIDAY" : "NO_DATA")} />{day.excessOvertimeReviewStatus ? <span className="table-secondary">{humanize(day.excessOvertimeReviewStatus)}</span> : null}</td>
-      </tr>)}</tbody></table></div> : null}
+      </tr>;
+      })}</tbody></table></div> : null}
       <div className="table-footer"><span>Rates and payable time are provided by the backend.</span><span>Estimates may change after approved corrections or payroll review.</span></div>
       </div>
     </Panel>
