@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { CalendarClock, CircleDollarSign, Clock3, History, Plus, RefreshCw, Save, ShieldCheck, UserRound } from "lucide-react";
+import { CalendarClock, CircleDollarSign, Clock3, History, Plus, Save, ShieldCheck, UserRound } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest } from "@/lib/api-client";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 import { formatDate, formatMoney } from "@/lib/format";
 
 interface EmployeeOption { id: string; employee_code: string; first_name: string; last_name: string; workforce_role: string; department_name?: string | null }
@@ -58,17 +59,18 @@ export function PayRatesWorkspace() {
   }, []);
   useEffect(() => { void loadEmployees(); }, [loadEmployees]);
 
-  const loadRates = useCallback(async () => {
+  const loadRates = useCallback(async (silent = false) => {
     if (!employeeId) { setRates([]); return; }
-    setLoadingRates(true); setError("");
+    if (!silent) setLoadingRates(true); setError("");
     try {
       const result = await apiRequest<RateResponse>(`/attendance/pay-rates?employeeId=${encodeURIComponent(employeeId)}`);
       setRates(result.rates ?? []);
       if (result.organizationCurrencyCode) setOrgCurrency(result.organizationCurrencyCode);
     } catch (caught) { setRates([]); setError(caught instanceof Error ? caught.message : "Unable to load this employee’s rate history."); }
-    finally { setLoadingRates(false); }
+    finally { if (!silent) setLoadingRates(false); }
   }, [employeeId]);
   useEffect(() => { void loadRates(); }, [loadRates]);
+  useSmartRefresh(() => loadRates(true), Boolean(employeeId) && !open && !saving);
 
   const activeRate = useMemo(() => rates.find((rate) => rate.effectiveFrom <= (workDate ?? new Date().toISOString().slice(0,10)) && (!rate.effectiveTo || rate.effectiveTo >= (workDate ?? new Date().toISOString().slice(0,10))) ) ?? rates[0], [rates, workDate]);
   function setValue<K extends keyof RateForm>(key: K, value: RateForm[K]) { setForm((currentValue) => ({ ...currentValue, [key]: value })); }
@@ -87,7 +89,7 @@ export function PayRatesWorkspace() {
   }
 
   return <>
-    <PageHeader eyebrow="Compensation" title="Employee pay rates" description="Maintain effective-dated hourly and overtime rates in the organization’s configured currency." action={<div style={{ display:"flex", gap:8 }}><Button variant="secondary" leading={<RefreshCw size={14} />} onClick={() => void loadRates()} busy={loadingRates}>Refresh</Button><Button variant="primary" leading={<Plus size={14} />} disabled={!employeeId || !selectedCurrency} onClick={addRate}>Add rate period</Button></div>} />
+    <PageHeader eyebrow="Compensation" title="Employee pay rates" description="Maintain effective-dated hourly and overtime rates in the organization’s configured currency." action={<div style={{ display:"flex", gap:8 }}><Button variant="primary" leading={<Plus size={14} />} disabled={!employeeId || !selectedCurrency} onClick={addRate}>Add rate period</Button></div>} />
     {error ? <div role="alert" className="form-error" style={{ marginBottom:14 }}>{error}</div> : null}
     {notice ? <div role="status" className="success-callout" style={{ marginBottom:14 }}>{notice}</div> : null}
     <Panel style={{ marginBottom:16 }}>

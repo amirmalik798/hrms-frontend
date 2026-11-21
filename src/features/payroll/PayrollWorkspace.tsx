@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { AlertCircle, BadgeDollarSign, CalendarDays, CheckCircle2, CircleDollarSign, FileDown, RefreshCw, Wallet } from "lucide-react";
+import { AlertCircle, BadgeDollarSign, CalendarDays, CheckCircle2, CircleDollarSign, FileDown, Wallet } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
@@ -13,6 +13,7 @@ import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest } from "@/lib/api-client";
 import { formatDate, formatMoney, humanize } from "@/lib/format";
 import { buildSalarySlipDocument, type SalarySlipPayload } from "@/features/payroll/salary-slip-document";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 import { useAttendanceRefresh } from "@/lib/attendance-events";
 
 interface Payment {
@@ -89,6 +90,7 @@ export function PayrollWorkspace() {
   }, [month]);
   useEffect(() => { if (workDate && !monthTouchedByUser) setMonth(workDate.slice(0, 7)); }, [workDate, monthTouchedByUser]);
   useEffect(() => { void load(); }, [load]);
+  useSmartRefresh(() => load(), !selected && !slipTarget && !bulkOpen && !saving && !bulkBusy && !slipLoading && !slipPrinting);
   useAttendanceRefresh(() => { void load(); });
 
   const visible = payments.filter((item) => {
@@ -243,7 +245,7 @@ export function PayrollWorkspace() {
   }
 
   return <>
-    <PageHeader eyebrow="Compensation" title={user.role === "EMPLOYEE" ? "My pay" : user.role === "DEPARTMENT_MANAGER" ? "Team payments" : "Salary payments"} description={user.role === "EMPLOYEE" ? "Review your calculated earnings and recorded monthly payment status." : "Review backend-calculated earnings, resolve rate issues, and track monthly payment status."} action={<Button variant="secondary" leading={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>Refresh</Button>} />
+    <PageHeader eyebrow="Compensation" title={user.role === "EMPLOYEE" ? "My pay" : user.role === "DEPARTMENT_MANAGER" ? "Team payments" : "Salary payments"} description={user.role === "EMPLOYEE" ? "Review your calculated earnings and recorded monthly payment status." : "Review backend-calculated earnings, resolve rate issues, and track monthly payment status."} />
     {error ? <div role="alert" className="form-error" style={{ marginBottom: 14 }}>{error}</div> : null}
     {notice ? <div role="status" className="success-callout" style={{ marginBottom: 14 }}><CheckCircle2 size={15} />{notice}</div> : null}
     <div className="payroll-summary-grid" style={{ marginBottom: 16 }}>

@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { apiRequest } from "@/lib/api-client";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 
 interface LicenseDetails {
   status: string;
@@ -62,16 +63,17 @@ export function LicenseWorkspace() {
   const [reference, setReference] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true); setError("");
     try {
       const result = await apiRequest<LicensePayload>("/org/license");
       setLicense(result.license || null);
       setPayments(Array.isArray(result.payments) ? result.payments : []);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load license information."); }
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  useSmartRefresh(() => load(true), !formOpen && !confirmOpen && !submitting);
   useEffect(() => { if (currencyCode) setPaymentCurrency(currencyCode.toUpperCase()); }, [currencyCode]);
 
   const pending = payments.some((payment) => payment.status === "PENDING_REVIEW");
@@ -103,8 +105,8 @@ export function LicenseWorkspace() {
   const statusDetail = license?.canAccess ? "Your organization can access the HRMS workspace." : license?.restrictionReason || "Access is restricted until the license is activated or renewed.";
 
   return <>
-    <PageHeader eyebrow="Organization" title="License & payments" description="Review your subscription status and submit payment proof for verification." action={<Button variant="secondary" busy={loading} onClick={() => void load()}>Refresh status</Button>} />
-    {error ? <div className="form-error" role="alert" style={{ marginBottom: 13 }}>{error} <button className="button button-sm button-ghost" onClick={() => void load()}>Try again</button></div> : null}
+    <PageHeader eyebrow="Organization" title="License & payments" description="Review your subscription status and submit payment proof for verification." />
+    {error ? <div className="form-error" role="alert" style={{ marginBottom: 13 }}>{error} The payment and license status will retry automatically.</div> : null}
     {notice ? <div className="success-callout" role="status" style={{ marginBottom: 13 }}><CheckCircle2 size={15} />{notice}</div> : null}
     {loading && !license ? <div className="loading-state">Loading your license…</div> : null}
     {license ? <>
