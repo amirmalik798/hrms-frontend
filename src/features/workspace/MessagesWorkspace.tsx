@@ -101,7 +101,7 @@ export function MessagesWorkspace() {
   }, !compose && !sending);
 
   async function sendNew(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setSending(true); setError(""); setNotice("");
+    event.preventDefault(); shouldStickToBottomRef.current = true; setSending(true); setError(""); setNotice("");
     try {
       const result = await apiRequest<{ conversationId?: string }>("/communications", { method: "POST", body: JSON.stringify({ subject: subject.trim(), message: newMessage.trim() }) });
       setSubject(""); setNewMessage(""); setCompose(false); setNotice("Message sent.");
@@ -112,6 +112,7 @@ export function MessagesWorkspace() {
   }
   async function sendReply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!selectedId) return;
+    shouldStickToBottomRef.current = true;
     setSending(true); setError(""); setNotice("");
     try {
       await apiRequest(`/communications/${selectedId}`, { method: "POST", body: JSON.stringify({ message: reply.trim() }) });
@@ -129,7 +130,7 @@ export function MessagesWorkspace() {
     <Panel style={{ overflow: "hidden" }}>
       <div className="message-layout">
         <aside className="message-inbox">
-          <div className="message-inbox-heading"><div><strong>Inbox</strong><span>{conversations.length} conversations</span></div>{canStartNew ? <Button size="sm" variant="primary" leading={<Plus size={13} />} onClick={() => { setCompose(true); setSelectedId(""); }}>New</Button> : null}</div>
+          <div className="message-inbox-heading"><div><strong>Inbox</strong><span>{conversations.length} conversations</span></div>{canStartNew ? <Button size="sm" variant="primary" leading={<Plus size={13} />} onClick={() => { shouldStickToBottomRef.current = true; setCompose(true); setSelectedId(""); }}>New</Button> : null}</div>
           {loading && !conversations.length ? <div className="loading-state"><LoaderCircle className="spin" size={17} /><p>Loading messages…</p></div> : conversations.length ? conversations.map((conversation) => <button type="button" className={`message-thread-link ${selectedId === conversation.id ? "message-thread-active" : ""}`} key={conversation.id} onClick={() => { shouldStickToBottomRef.current = true; setCompose(false); setSelectedId(conversation.id); setError(""); setNotice(""); }}><ProfilePhoto name={conversation.otherName} employeeId={conversation.otherEmployeeId} conversationId={conversation.id} className="user-avatar" /><span className="message-thread-copy"><strong>{conversation.subject}</strong><span>{conversation.otherName} · {humanize(conversation.otherRole)}</span><small>{conversation.lastMessage}</small><small className="message-thread-time">{formatMessageTimestamp(conversation.lastMessageAt, timeZone)}</small></span>{conversation.unreadCount ? <span className="task-count">{conversation.unreadCount}</span> : null}</button>) : <div className="empty-state" style={{ padding: 24 }}><div className="state-icon"><Mail size={18} /></div><h3>No messages yet</h3><p>Your conversations will appear here.</p></div>}
           {canStartNew ? <p className="message-recipient-note"><ShieldCheck size={13} /> New conversations go to {recipientName || "your assigned higher-up"}. Recipient selection is controlled by the backend.</p> : <p className="message-recipient-note"><ShieldCheck size={13} /> New conversations are unavailable until an eligible reporting-line recipient is configured.</p>}
         </aside>
