@@ -36,17 +36,23 @@ export function ReportsWorkspace() {
   const [autoPreviewRevision, setAutoPreviewRevision] = useState(0);
   const [selectedDatePreset, setSelectedDatePreset] = useState<"7d" | "14d" | "3m" | "6m" | "12m" | null>(null);
   const reportRequestRef = useRef(0);
+  const targetRequestRef = useRef(0);
 
   const loadTargets = useCallback(async (silent = false) => {
+    const requestId = ++targetRequestRef.current;
     if (user.role === "EMPLOYEE") return;
     if (!silent) setLoadingTargets(true); setError("");
     try {
       const result = await apiRequest<{ targets?: ReportTarget[] }>("/attendance/reports/monthly?mode=targets");
+      if (requestId !== targetRequestRef.current) return;
       const values = Array.isArray(result.targets) ? result.targets : [];
       setTargets(values);
       setTargetId((current) => current || values[0]?.employeeId || "");
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load report targets."); }
-    finally { if (!silent) setLoadingTargets(false); }
+    } catch (caught) {
+      if (requestId === targetRequestRef.current) setError(caught instanceof Error ? caught.message : "Unable to load report targets.");
+    } finally {
+      if (!silent && requestId === targetRequestRef.current) setLoadingTargets(false);
+    }
   }, [user.role]);
 
   useEffect(() => { void loadTargets(); }, [loadTargets]);

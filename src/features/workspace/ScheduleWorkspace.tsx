@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { CalendarClock, CalendarRange, Plus, Power, PowerOff, UserRound, Users } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
@@ -56,8 +56,10 @@ export function ScheduleWorkspace() {
   const [effectiveFrom, setEffectiveFrom] = useState(organizationToday);
   const [effectiveTo, setEffectiveTo] = useState("");
   const [statusConfirm, setStatusConfirm] = useState<Schedule | null>(null);
+  const loadSequenceRef = useRef(0);
 
   const load = useCallback(async (silent = false) => {
+    const requestId = ++loadSequenceRef.current;
     if (!silent) setLoading(true); setError("");
     try {
       const assignmentsPromise = apiRequest<{ assignments?: Assignment[] }>("/schedule-assignments");
@@ -66,22 +68,27 @@ export function ScheduleWorkspace() {
         ? loadAllPages<Person>(async (page) => {
             const result = await apiRequest<{ employees?: Person[]; pagination?: { totalPages?: number } }>(`/employees?page=${page}&limit=100&status=ACTIVE&sortBy=name&sortOrder=asc`);
             return { items: result.employees ?? [], totalPages: result.pagination?.totalPages };
-          }).catch((caught) => {
-            setError(caught instanceof Error ? `The eligible workforce list could not be fully loaded: ${caught.message}` : "The eligible workforce list could not be fully loaded.");
-            return [] as Person[];
-          })
-        : Promise.resolve([] as Person[]);
+          }).then((people) => ({ people, error: "" })).catch((caught) => ({
+            people: [] as Person[],
+            error: caught instanceof Error ? `The eligible workforce list could not be fully loaded: ${caught.message}` : "The eligible workforce list could not be fully loaded.",
+          }))
+        : Promise.resolve({ people: [] as Person[], error: "" });
       const [assignmentResult, scheduleResult, peopleResult] = await Promise.all([assignmentsPromise, schedulePromise, peoplePromise]);
+      if (requestId !== loadSequenceRef.current) return;
       setAssignments(Array.isArray(assignmentResult.assignments) ? assignmentResult.assignments : []);
       setSchedules(Array.isArray(scheduleResult.schedules) ? scheduleResult.schedules : []);
-      const eligible = peopleResult.filter((person) => {
+      const eligible = peopleResult.people.filter((person) => {
         const role = (person.workforce_role || "EMPLOYEE").replaceAll("-", "_").toUpperCase();
         if (user.role === "HR_MANAGER") return ["EMPLOYEE", "DEPARTMENT_MANAGER"].includes(role);
         return ["EMPLOYEE", "DEPARTMENT_MANAGER", "HR_MANAGER"].includes(role);
       });
       setPeople(eligible);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load schedules."); }
-    finally { if (!silent) setLoading(false); }
+      if (peopleResult.error) setError(peopleResult.error);
+    } catch (caught) {
+      if (requestId === loadSequenceRef.current) setError(caught instanceof Error ? caught.message : "Unable to load schedules.");
+    } finally {
+      if (!silent && requestId === loadSequenceRef.current) setLoading(false);
+    }
   }, [canManage, user.role]);
 
   useEffect(() => { void load(); }, [load]);
