@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertCircle, CalendarDays, Clock3, FileDown, LoaderCircle, Printer, Wallet } from "lucide-react";
+import { AlertCircle, CalendarDays, ChevronDown, Clock3, FileDown, LoaderCircle, Printer, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
@@ -67,6 +67,7 @@ export function PersonalEarningsWorkspace({ embedded = false, monthOverride }: {
   const [ownMonth, setOwnMonth] = useState((workDate || new Date().toISOString().slice(0, 10)).slice(0, 7));
   const month = monthOverride || ownMonth;
   const [monthChanged, setMonthChanged] = useState(false);
+  const [dailyBreakdownOpen, setDailyBreakdownOpen] = useState(false);
   const [data, setData] = useState<EarningsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -149,7 +150,8 @@ export function PersonalEarningsWorkspace({ embedded = false, monthOverride }: {
       {data?.disclaimer ? <div className="info-callout" style={{ marginBottom: 14 }}>{data.disclaimer}</div> : null}
     </> : null}
     <Panel>
-      <div className="panel-heading"><div><h2>Daily earnings breakdown</h2><p>See each day’s calculated earnings and the hourly and overtime rates effective on that date.</p></div><span className="date-chip">{loading ? "Loading…" : `${days.length} days`}</span></div>
+      <div className="panel-heading"><div><h2>Daily earnings breakdown</h2><p>See each day’s calculated earnings and the hourly and overtime rates effective on that date.</p></div><div style={{ display: "flex", alignItems: "center", gap: 10 }}><span className="date-chip">{loading ? "Loading…" : `${days.length} days`}</span><button type="button" className="button button-sm button-secondary" aria-expanded={dailyBreakdownOpen} aria-controls="employee-daily-earnings-content" onClick={() => setDailyBreakdownOpen((open) => !open)}><ChevronDown size={14} style={{ transform: dailyBreakdownOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 160ms ease" }} />{dailyBreakdownOpen ? "Collapse" : "Expand"}</button></div></div>
+      <div id="employee-daily-earnings-content" hidden={!dailyBreakdownOpen}>
       {loading && !days.length ? <div className="loading-state">Calculating your earnings…</div> : null}
       {!loading && !error && !days.length ? <div className="empty-state"><div className="state-icon"><Wallet size={18} /></div><h3>No earnings details for this period</h3><p>Your daily schedule and attendance details will appear here when available.</p></div> : null}
       {days.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Work date</th><th>Schedule</th><th>Clock in / out</th><th>Worked</th><th>Approved OT</th><th>Daily earnings</th><th>Status</th></tr></thead><tbody>{days.map((day) => <tr key={day.workDate}>
@@ -162,6 +164,7 @@ export function PersonalEarningsWorkspace({ embedded = false, monthOverride }: {
         <td><StatusBadge value={day.calculationStatus || (day.isPaidLeave ? "PAID_LEAVE" : day.isPaidHoliday ? "PAID_HOLIDAY" : "NO_DATA")} />{day.excessOvertimeReviewStatus ? <span className="table-secondary">{humanize(day.excessOvertimeReviewStatus)}</span> : null}</td>
       </tr>)}</tbody></table></div> : null}
       <div className="table-footer"><span>Rates and payable time are provided by the backend.</span><span>Estimates may change after approved corrections or payroll review.</span></div>
+      </div>
     </Panel>
     {user.employeeId ? <Panel className="panel-pad" style={{ marginTop: 16 }}>
       <div className="payslip-generator-heading"><span className="metric-icon"><FileDown size={18} /></span><div><h2>Generate my payslip</h2><p>Select a From month and To month. Each month in the range is included as its own monthly payslip with attendance, effective pay rates and the latest payment status.</p></div></div>
