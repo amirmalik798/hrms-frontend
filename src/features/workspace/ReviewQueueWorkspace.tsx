@@ -12,6 +12,7 @@ import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest, pickArray, stringValue } from "@/lib/api-client";
 import { formatDate, humanize, getLocalISODate } from "@/lib/format";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
+import { useAttendanceRefresh } from "@/lib/attendance-events";
 
 interface QueueItem extends Record<string, unknown> {
   id?: string; status?: string; firstName?: string; lastName?: string; employeeCode?: string;
@@ -73,6 +74,7 @@ export function ReviewQueueWorkspace() {
     setLoading(false);
   }, [available, excessFromDate, excessToDate]);
   useEffect(() => { void load(); }, [load]);
+  useAttendanceRefresh(() => { void load(); });
   const selectedItems = items[active];
   const pendingCount = selectedItems.filter((item) => ["PENDING", "OPEN"].includes(String(item.status ?? "").toUpperCase())).length;
 
