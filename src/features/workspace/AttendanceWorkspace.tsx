@@ -79,7 +79,7 @@ function completeSelfAttendanceDays(
     });
   }
 
-  return complete;
+  return complete.reverse();
 }
 
 function duration(value: number | null | undefined) {
