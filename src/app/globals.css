@@ -1162,3 +1162,77 @@ body {
     grid-column: auto;
   }
 }
+
+
+/* Department lifecycle confirmation: separate labels from values for quick review. */
+.department-status-summary {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 17px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+.department-status-summary-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--border);
+}
+.department-status-summary-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--accent);
+}
+.department-status-summary-heading > div,
+.department-status-summary-meta > div {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+}
+.department-status-summary-heading > div > span,
+.department-status-summary-meta > div > span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.department-status-summary-heading > div > strong {
+  color: var(--text-strong);
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.department-status-summary-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.department-status-summary-meta > div {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+}
+.department-status-summary-meta > div > strong {
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 740;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 420px) {
+  .department-status-summary-meta {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
