@@ -13,6 +13,7 @@ import { apiRequest, ApiError, pickArray, stringValue } from "@/lib/api-client";
 import { formatDate, humanize } from "@/lib/format";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { useSmartRefresh } from "@/lib/smart-refresh";
+import { loadAllPages } from "@/lib/paginated-data";
 
 interface Employee {
   id: string;
@@ -56,6 +57,7 @@ export function WorkforceWorkspace() {
   const [rows, setRows] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [managerOptions, setManagerOptions] = useState<Employee[]>([]);
+  const [managerOptionsError, setManagerOptionsError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -98,13 +100,19 @@ export function WorkforceWorkspace() {
   useSmartRefresh(() => load(true), !drawerMode && !statusTarget && !detailLoading && !statusSaving);
   useEffect(() => {
     let active = true;
+    setManagerOptionsError("");
     Promise.all([
       apiRequest<{ departments?: DepartmentOption[] }>("/departments?page=1&limit=100&includeInactive=true").catch(() => null),
-      apiRequest<{ employees?: Employee[] }>("/employees?page=1&limit=100&status=ACTIVE&sortBy=name&sortOrder=asc").catch(() => null),
-    ]).then(([deptResult, peopleResult]) => {
+      loadAllPages<Employee>(async (page) => {
+        const result = await apiRequest<DirectoryResponse>(`/employees?page=${page}&limit=100&status=ACTIVE&sortBy=name&sortOrder=asc`);
+        return { items: result.employees ?? [], totalPages: result.pagination?.totalPages };
+      }),
+    ]).then(([deptResult, people]) => {
       if (!active) return;
       setDepartments(deptResult?.departments ?? []);
-      setManagerOptions((peopleResult?.employees ?? []).filter((person) => ["HR_MANAGER", "DEPARTMENT_MANAGER"].includes(person.workforce_role)));
+      setManagerOptions(people.filter((person) => ["HR_MANAGER", "DEPARTMENT_MANAGER"].includes(person.workforce_role)));
+    }).catch((caught) => {
+      if (active) setManagerOptionsError(caught instanceof Error ? caught.message : "Unable to load all eligible managers.");
     });
     return () => { active = false; };
   }, []);
@@ -260,7 +268,7 @@ function EmployeeDrawer({ open, mode, employee, loading, departments, managers, 
         <Field label="Job title"><TextInput required maxLength={100} value={form.designation} onChange={(e) => update("designation", e.target.value)} placeholder="e.g. Finance Officer" /></Field>
         <Field label="Joining date"><TextInput required type="date" value={form.joining_date} onChange={(e) => update("joining_date", e.target.value)} /></Field>
         <Field label="Department"><SelectInput value={form.department_id} onChange={(e) => update("department_id", e.target.value)}><option value="">No department assigned</option>{departments.filter((d) => d.status !== "INACTIVE").map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</SelectInput></Field>
-        <Field label="Reporting manager"><SelectInput value={form.manager_id} onChange={(e) => update("manager_id", e.target.value)}><option value="">No manager assigned</option>{managers.filter((m) => m.id !== employee?.id).map((m) => <option key={m.id} value={m.id}>{m.first_name} {m.last_name} · {roleDisplay[m.workforce_role] ?? humanize(m.workforce_role)}</option>)}</SelectInput></Field>
+        <Field label="Reporting manager" hint={managerOptionsError || "All active HR Managers and Department Managers are listed."}><SelectInput value={form.manager_id} onChange={(e) => update("manager_id", e.target.value)}><option value="">No manager assigned</option>{managers.filter((m) => m.id !== employee?.id).map((m) => <option key={m.id} value={m.id}>{m.first_name} {m.last_name} · {roleDisplay[m.workforce_role] ?? humanize(m.workforce_role)}</option>)}</SelectInput></Field>
       </div></section>
       <section className="form-section"><h3 className="form-section-title"><Mail size={15} /> Contact details</h3><div className="form-grid">
         <Field label="Work email"><TextInput type="email" required maxLength={254} value={form.email} onChange={(e) => update("email", e.target.value)} placeholder="person@company.com" /></Field>

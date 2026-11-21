@@ -13,6 +13,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { apiRequest } from "@/lib/api-client";
 import { formatNumber, humanize } from "@/lib/format";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
+import { loadAllPages } from "@/lib/paginated-data";
 
 interface Department {
   id: string; name: string; description: string | null; status: string;
@@ -28,6 +29,7 @@ export function DepartmentsWorkspace() {
   const { user } = useWorkspace();
   const [rows, setRows] = useState<Department[]>([]);
   const [managers, setManagers] = useState<Manager[]>([]);
+  const [managerOptionsError, setManagerOptionsError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
@@ -50,11 +52,14 @@ export function DepartmentsWorkspace() {
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true); setError("");
     try {
-      const params = new URLSearchParams({ page: "1", limit: "100", includeInactive: "true" });
-      if (query.trim()) params.set("q", query.trim());
-      if (status !== "ALL") params.set("status", status);
-      const result = await apiRequest<DepartmentResponse>(`/departments?${params.toString()}`);
-      setRows(result.departments ?? []);
+      const allDepartments = await loadAllPages<Department>(async (page) => {
+        const params = new URLSearchParams({ page: String(page), limit: "100", includeInactive: "true" });
+        if (query.trim()) params.set("q", query.trim());
+        if (status !== "ALL") params.set("status", status);
+        const result = await apiRequest<DepartmentResponse>(`/departments?${params.toString()}`);
+        return { items: result.departments ?? [], totalPages: result.pagination?.totalPages };
+      });
+      setRows(allDepartments);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load departments."); }
     finally { if (!silent) setLoading(false); }
   }, [query, status]);
@@ -62,9 +67,13 @@ export function DepartmentsWorkspace() {
   useSmartRefresh(() => load(true), !drawer && !statusTarget && !statusSaving && !detailLoading);
   useEffect(() => {
     let active = true;
-    apiRequest<{ employees?: Manager[] }>("/employees?page=1&limit=100&status=ACTIVE&sortBy=name&sortOrder=asc")
-      .then((result) => { if (active) setManagers((result.employees ?? []).filter((person) => person.workforce_role === "DEPARTMENT_MANAGER")); })
-      .catch(() => undefined);
+    setManagerOptionsError("");
+    loadAllPages<Manager>(async (page) => {
+      const result = await apiRequest<{ employees?: Manager[]; pagination?: { totalPages?: number } }>(`/employees?page=${page}&limit=100&status=ACTIVE&sortBy=name&sortOrder=asc`);
+      return { items: result.employees ?? [], totalPages: result.pagination?.totalPages };
+    })
+      .then((people) => { if (active) setManagers(people.filter((person) => person.workforce_role === "DEPARTMENT_MANAGER")); })
+      .catch((caught) => { if (active) setManagerOptionsError(caught instanceof Error ? caught.message : "The department manager list could not be fully loaded."); });
     return () => { active = false; };
   }, []);
 
@@ -99,6 +108,7 @@ export function DepartmentsWorkspace() {
   return <>
     <PageHeader eyebrow="People" title="Departments" description="Keep teams easy to understand, with clear ownership and staffing context." action={canCreate ? <Button variant="primary" leading={<Plus size={15} />} onClick={() => { setSelected(null); setDrawer("create"); }}>Create department</Button> : undefined} />
     {notice ? <div className="info-callout" style={{ marginBottom: 14 }}>{notice}</div> : null}
+    {managerOptionsError ? <div className="form-error" role="alert" style={{ marginBottom: 14 }}>Manager options could not be fully loaded. {managerOptionsError}</div> : null}
     <Panel>
       <div className="toolbar"><div className="toolbar-left"><label className="search-field"><Search size={15} /><input aria-label="Search departments" placeholder="Search departments or managers…" value={query} onChange={(e) => setQuery(e.target.value)} /></label><select className="filter-select" aria-label="Filter department status" value={status} onChange={(e) => setStatus(e.target.value)}><option value="ALL">All departments</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select></div><span style={{ color: "var(--muted)", fontSize: 11 }}>{loading ? "Loading…" : `${rows.length} departments`}</span></div>
       {error && !rows.length ? <div className="error-state"><div className="state-icon"><Building2 size={18} /></div><h3>Departments unavailable</h3><p>{error} This list will retry automatically.</p></div> : null}
@@ -155,7 +165,7 @@ function DepartmentDrawer({ open, mode, department, loading, managers, canDeacti
         <Field label="Department name"><TextInput required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Finance" /></Field>
         <Field label="Description" hint="Optional · up to 2,000 characters"><TextArea maxLength={2000} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What does this team do?" /></Field>
         {mode === "edit" ? <>
-          <Field label="Department manager" hint="The backend validates whether the selected manager is eligible."><SelectInput value={managerId} onChange={(e) => setManagerId(e.target.value)}><option value="">No manager assigned</option>{managers.map((manager) => <option key={manager.id} value={manager.id}>{manager.first_name} {manager.last_name} · {manager.employee_code}</option>)}</SelectInput></Field>
+          <Field label="Department manager" hint="The backend validates whether the selected manager is eligible. {managerOptionsError ? "Manager options are incomplete; retry after the employee list loads." : "All active department managers are loaded."}"><SelectInput value={managerId} onChange={(e) => setManagerId(e.target.value)}><option value="">No manager assigned</option>{managers.map((manager) => <option key={manager.id} value={manager.id}>{manager.first_name} {manager.last_name} · {manager.employee_code}</option>)}</SelectInput></Field>
           <Field label="Status"><SelectInput value={status} disabled={!canDeactivate && status === "INACTIVE"} onChange={(e) => setStatus(e.target.value)}><option value="ACTIVE">Active</option><option value="INACTIVE" disabled={!canDeactivate}>Inactive</option></SelectInput></Field>
         </> : null}
       </div></section>

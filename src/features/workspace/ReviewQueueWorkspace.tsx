@@ -101,7 +101,7 @@ export function ReviewQueueWorkspace() {
   useAttendanceRefresh(() => { void load(true); });
   const selectedItems = items[active];
   const activeError = queueErrors[active];
-  const pendingCount = selectedItems.filter((item) => ["PENDING", "OPEN"].includes(String(item.status ?? "").toUpperCase())).length;
+  const pendingCount = selectedItems.filter((item) => item.employeeId !== user.employeeId && ["PENDING", "OPEN"].includes(String(item.status ?? "").toUpperCase())).length;
 
   function openDecision(item: QueueItem, kind: DecisionKind) {
     setSelected(item); setDecision(kind); setReviewerNote(""); setActionError("");
@@ -138,7 +138,7 @@ export function ReviewQueueWorkspace() {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 5, padding: 13, borderBottom: "1px solid var(--border)" }}>
         {available.map((key) => {
           const Icon = key === "corrections" ? FileClock : key === "overtime" ? Clock3 : ShieldAlert;
-          const count = items[key].filter((item) => ["PENDING", "OPEN"].includes(String(item.status ?? "").toUpperCase())).length;
+          const count = items[key].filter((item) => item.employeeId !== user.employeeId && ["PENDING", "OPEN"].includes(String(item.status ?? "").toUpperCase())).length;
           return <button type="button" key={key} className={`button button-sm ${active === key ? "button-primary" : "button-ghost"}`} onClick={() => setActive(key)}><Icon size={13} />{endpoint[key].label}<span className="task-count" style={{ minWidth: 21, height: 21, marginLeft: 2 }}>{count}</span></button>;
         })}
       </div>
@@ -163,7 +163,7 @@ export function ReviewQueueWorkspace() {
           </tr>;
         })}
       </tbody></table></div> : null}
-      {!loading && selectedItems.length ? <div className="table-footer"><span>{selectedItems.length} records · {pendingCount} open/pending</span><span>Decisions are validated by the backend against the active role and assigned-department scope.</span></div> : null}
+      {!loading && selectedItems.length ? <div className="table-footer"><span>{selectedItems.length} records · {pendingCount} actionable open/pending</span><span>Decisions are validated by the backend against the active role and assigned-department scope.</span></div> : null}
     </Panel>
     <Drawer open={Boolean(selected)} title={active === "excess" ? "Review excess time" : `${decision === "approve" ? "Approve" : "Reject"} ${endpoint[active].label.toLowerCase()}`} description="Review the employee, date, and reason before recording your decision." onClose={() => { if (!saving) setSelected(null); }} width="standard" footer={<><Button variant="secondary" disabled={saving} onClick={() => setSelected(null)}>Cancel</Button><Button variant={decision === "reject" || decision === "follow-up" ? "danger" : "primary"} busy={saving} onClick={() => document.querySelector<HTMLFormElement>("#queue-decision-form")?.requestSubmit()}>{decision === "approve" ? "Approve request" : decision === "reject" ? "Reject request" : decision === "reviewed" ? "Mark as reviewed" : "Record follow-up"}</Button></>}>
       {selected ? <form id="queue-decision-form" onSubmit={submitDecision}>

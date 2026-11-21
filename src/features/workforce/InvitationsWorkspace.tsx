@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, Clock3, Mail, RefreshCw, Search, ShieldCheck, XCircle } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
@@ -36,7 +36,7 @@ interface InvitationPayload {
 const statusFilters = ["ALL", "PENDING", "ACCEPTED", "EXPIRED", "REVOKED"] as const;
 
 export function InvitationsWorkspace() {
-  const { user } = useWorkspace();
+  const { user, timeZone } = useWorkspace();
   const canManage = user.role === "ORGANIZATION_ADMIN" || (user.role === "HR_MANAGER" && user.permissions.includes("employee.create") && user.permissions.includes("user.invite"));
   const [items, setItems] = useState<Invitation[]>([]);
   const [summary, setSummary] = useState<InvitationPayload["summary"]>();
@@ -51,20 +51,25 @@ export function InvitationsWorkspace() {
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const loadSequenceRef = useRef(0);
 
   const load = useCallback(async (silent = false) => {
+    const requestId = ++loadSequenceRef.current;
     if (!silent) setLoading(true);
-    setError("");
+    if (!silent) setError("");
     try {
       const params = new URLSearchParams({ page: String(page), limit: "25", status });
       if (query.trim()) params.set("q", query.trim());
       const result = await apiRequest<InvitationPayload>(`/org/invitations?${params.toString()}`);
+      if (requestId !== loadSequenceRef.current) return;
       setItems(Array.isArray(result.invitations) ? result.invitations : []);
       setSummary(result.summary);
       setTotalPages(Math.max(1, result.pagination?.totalPages ?? 1));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to load invitations.");
-    } finally { if (!silent) setLoading(false); }
+      if (requestId === loadSequenceRef.current) setError(caught instanceof Error ? caught.message : "Unable to load invitations.");
+    } finally {
+      if (requestId === loadSequenceRef.current) setLoading(false);
+    }
   }, [page, query, status]);
 
   useEffect(() => { void load(); }, [load]);
@@ -115,14 +120,14 @@ export function InvitationsWorkspace() {
       {loading && !items.length ? <div className="loading-state">Loading invitation records…</div> : null}
       {!loading && !error && !items.length ? <div className="empty-state"><div className="state-icon"><Mail size={18} /></div><h3>{query || status !== "ALL" ? "No matching invitations" : "No invitations yet"}</h3><p>{query || status !== "ALL" ? "Try a different search or status." : "When workforce profiles are invited, their status and history will appear here."}</p></div> : null}
       {items.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Person</th><th>Role</th><th>Status</th><th>Sent</th><th>Expires</th><th>Invited by</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{items.map((item) => {
-        const pending = item.display_status === "PENDING" && new Date(item.expires_at).getTime() > Date.now();
+        const pending = item.display_status === "PENDING";
         const canResend = canManage && pending && (user.role === "ORGANIZATION_ADMIN" || item.workforce_role !== "HR_MANAGER");
         return <tr key={item.id}>
           <td><span className="table-primary">{item.employee_name || item.email}</span><span className="table-secondary">{item.employee_code || "No employee code"} · {item.email}</span></td>
           <td>{humanize(item.workforce_role || "EMPLOYEE")}</td>
           <td><StatusBadge value={item.display_status || item.status} /></td>
-          <td>{formatDate(item.created_at)}</td>
-          <td>{formatDate(item.expires_at)}</td>
+          <td>{formatDate(item.created_at, timeZone)}</td>
+          <td>{formatDate(item.expires_at, timeZone)}</td>
           <td>{item.invited_by_email || "—"}</td>
           <td><div style={{ display: "flex", justifyContent: "flex-end", gap: 4 }}>{canResend ? <Button size="sm" variant="ghost" disabled={saving} onClick={() => void resend(item)}>Resend</Button> : null}{canManage && pending ? <Button size="sm" variant="ghost" disabled={saving} onClick={() => { setSelected(item); setReason(""); setRevokeOpen(true); }}>Revoke</Button> : null}<Button size="sm" variant="ghost" onClick={() => setSelected(item)}>History</Button></div></td>
         </tr>;
@@ -133,7 +138,7 @@ export function InvitationsWorkspace() {
       {selected ? <div className="form-section"><div className="form-note"><ShieldCheck size={15} /> {selected.email}</div><Field label="Reason (optional)" hint="The reason is recorded in the invitation history."><TextArea rows={3} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></Field></div> : null}
     </Drawer>
     <Drawer open={Boolean(selected) && !revokeOpen} title="Invitation history" description="Current invitation status and recorded events." onClose={() => setSelected(null)} width="standard" footer={<Button onClick={() => setSelected(null)}>Close</Button>}>
-      {selected ? <><div className="form-grid"><div><p className="field-hint">Person</p><p className="table-primary">{selected.employee_name || selected.email}</p></div><div><p className="field-hint">Status</p><StatusBadge value={selected.display_status || selected.status} /></div><div><p className="field-hint">Invitation email</p><p className="table-primary">{selected.email}</p></div><div><p className="field-hint">Created</p><p className="table-primary">{formatDate(selected.created_at)}</p></div></div><div className="form-section"><h3 className="form-section-title">History</h3>{selected.history?.length ? selected.history.map((event, index) => <div key={`${event.event_type}-${index}`} className="history-event"><span className="history-dot" /><div><strong>{humanize(event.event_type)}</strong><p>{event.reason || "No additional note"}</p><small>{event.effective_at ? formatDate(event.effective_at) : "Time unavailable"}</small></div></div>) : <p className="field-hint">No additional invitation history is available.</p>}</div></> : null}
+      {selected ? <><div className="form-grid"><div><p className="field-hint">Person</p><p className="table-primary">{selected.employee_name || selected.email}</p></div><div><p className="field-hint">Status</p><StatusBadge value={selected.display_status || selected.status} /></div><div><p className="field-hint">Invitation email</p><p className="table-primary">{selected.email}</p></div><div><p className="field-hint">Created</p><p className="table-primary">{formatDate(selected.created_at, timeZone)}</p></div></div><div className="form-section"><h3 className="form-section-title">History</h3>{selected.history?.length ? selected.history.map((event, index) => <div key={`${event.event_type}-${index}`} className="history-event"><span className="history-dot" /><div><strong>{humanize(event.event_type)}</strong><p>{event.reason || "No additional note"}</p><small>{event.effective_at ? formatDate(event.effective_at, timeZone) : "Time unavailable"}</small></div></div>) : <p className="field-hint">No additional invitation history is available.</p>}</div></> : null}
     </Drawer>
   </>;
 }

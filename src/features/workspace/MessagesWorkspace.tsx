@@ -61,11 +61,15 @@ export function MessagesWorkspace() {
   const [reply, setReply] = useState("");
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
+  const inboxRequestRef = useRef(0);
+  const threadRequestRef = useRef(0);
 
   const loadInbox = useCallback(async (silent = false) => {
+    const requestId = ++inboxRequestRef.current;
     if (!silent) setLoading(true);
     try {
       const result = await apiRequest<InboxPayload>("/communications");
+      if (requestId !== inboxRequestRef.current) return;
       const data = result.conversations ?? [];
       setConversations(data);
       setCurrentUserId(result.currentUserId ?? "");
@@ -73,26 +77,34 @@ export function MessagesWorkspace() {
       setRecipientName(result.recipientName ?? "");
       setError("");
       setSelectedId((current) => current && data.some((conversation) => conversation.id === current) ? current : data[0]?.id ?? "");
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load your messages."); }
-    finally { if (!silent) setLoading(false); }
+    } catch (caught) {
+      if (requestId === inboxRequestRef.current) setError(caught instanceof Error ? caught.message : "Unable to load your messages.");
+    } finally {
+      if (requestId === inboxRequestRef.current) setLoading(false);
+    }
   }, []);
 
   const loadThread = useCallback(async (id: string, silent = false) => {
     if (!id) return;
+    const requestId = ++threadRequestRef.current;
     if (!silent) setThreadLoading(true);
     try {
       const result = await apiRequest<ThreadPayload>(`/communications/${id}`);
+      if (requestId !== threadRequestRef.current) return;
       setMessages(result.messages ?? []);
       setThreadSubject(result.conversation?.subject ?? "");
       setOtherName(result.conversation?.otherName ?? "");
       setOtherRole(result.conversation?.otherRole ?? "");
       if (!silent) void loadInbox(true);
-    } catch (caught) { if (!silent) setError(caught instanceof Error ? caught.message : "Unable to open this conversation."); }
-    finally { if (!silent) setThreadLoading(false); }
+    } catch (caught) {
+      if (requestId === threadRequestRef.current && !silent) setError(caught instanceof Error ? caught.message : "Unable to open this conversation.");
+    } finally {
+      if (requestId === threadRequestRef.current) setThreadLoading(false);
+    }
   }, [loadInbox]);
 
   useEffect(() => { void loadInbox(); }, [loadInbox]);
-  useEffect(() => { if (selectedId) void loadThread(selectedId); else setMessages([]); }, [selectedId, loadThread]);
+  useEffect(() => { if (selectedId) void loadThread(selectedId); else { threadRequestRef.current += 1; setMessages([]); setThreadLoading(false); } }, [selectedId, loadThread]);
   useEffect(() => {
     if (!selectedId || !messages.length || !shouldStickToBottomRef.current) return;
     const frame = window.requestAnimationFrame(() => {
