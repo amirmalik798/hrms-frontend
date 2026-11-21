@@ -202,31 +202,55 @@ export function ReportsWorkspace() {
     {notice ? <div className="success-callout" role="status" style={{ marginBottom: 12 }}>{notice}</div> : null}
     {error ? <div className="form-error" role="alert" style={{ marginBottom: 12 }}>{error}</div> : null}
     {canGenerateOrganizationSeries ? <Panel className="panel-pad organization-monthly-report">
-      <div className="organization-monthly-heading"><span className="metric-icon"><CalendarRange size={17} /></span><div><h2>{user.role === "ORGANIZATION_ADMIN" ? "Multi-month organization attendance" : "Multi-month direct-reports attendance"}</h2><p>{user.role === "ORGANIZATION_ADMIN" ? "Download one PDF containing the organization-wide monthly attendance registers." : "Download one PDF containing monthly attendance registers for your authorized direct-report scope."} Up to 24 months per report.</p></div></div>
+      <div className="organization-monthly-heading">
+        <span className="report-section-icon"><CalendarRange size={18} /></span>
+        <div className="organization-monthly-heading-copy">
+          <span className="report-section-eyebrow">Organization report</span>
+          <h2>{user.role === "ORGANIZATION_ADMIN" ? "Multi-month organization attendance" : "Multi-month direct-reports attendance"}</h2>
+          <p>{user.role === "ORGANIZATION_ADMIN" ? "Download one PDF containing the organization-wide monthly attendance registers." : "Download one PDF containing monthly attendance registers for your authorized direct-report scope."}</p>
+        </div>
+        <span className="report-limit-pill">Up to 24 months</span>
+      </div>
       <div className="report-filter-grid organization-monthly-fields">
         <Field label="From month"><TextInput type="month" min="1900-01" max={toMonth || undefined} value={fromMonth} onChange={(event) => setFromMonth(event.target.value)} /></Field>
         <Field label="To month"><TextInput type="month" min={fromMonth || "1900-01"} max={(workDate || todayISO(timeZone)).slice(0, 7)} value={toMonth} onChange={(event) => setToMonth(event.target.value)} /></Field>
-        <div className="organization-monthly-summary"><strong>{monthSpan || "—"}</strong><span>{monthSpan === 1 ? "calendar month" : "calendar months"} · maximum 24</span></div>
+        <div className="organization-monthly-summary"><strong>{monthSpan || "—"}</strong><span><b>{monthSpan === 1 ? "calendar month selected" : "calendar months selected"}</b><small>Maximum 24 per report</small></span></div>
       </div>
-      <div className="organization-monthly-footer"><p>Uses organization timezone: <strong>{timeZone}</strong>. Future dates are excluded by the backend.</p><Button variant="primary" leading={<ArrowDownToLine size={14} />} busy={monthlyDownloading} disabled={!monthSpan || monthSpan > 24} onClick={() => void downloadOrganizationSeries()}>Download combined PDF</Button></div>
+      <div className="organization-monthly-footer"><p><span className="report-timezone-dot" /> Organization timezone <strong>{timeZone}</strong><span className="report-footer-separator">·</span> Future dates are excluded.</p><Button variant="primary" leading={<ArrowDownToLine size={14} />} busy={monthlyDownloading} disabled={!monthSpan || monthSpan > 24} onClick={() => void downloadOrganizationSeries()}>Download combined PDF</Button></div>
       {monthSpan > 24 ? <p className="field-hint" role="alert">Choose a range of 24 months or fewer.</p> : null}
     </Panel> : null}
-    <Panel className="panel-pad">
-      <div className="report-filter-grid">
+    <Panel className="panel-pad individual-report-panel">
+      <div className="individual-report-heading">
+        <span className="report-section-icon"><FileBarChart size={18} /></span>
+        <div>
+          <span className="report-section-eyebrow">Individual report</span>
+          <h2>Workforce attendance report</h2>
+          <p>Select a workforce member and reporting period. Preview the monthly summary or download the complete PDF.</p>
+        </div>
+      </div>
+      <div className="report-filter-grid individual-report-fields">
         {user.role !== "EMPLOYEE" ? <Field label="Workforce member"><SelectInput required value={targetId} onChange={(event) => { setTargetId(event.target.value); setReport(null); }}><option value="">Select a person</option>{targets.map((target) => <option key={target.employeeId} value={target.employeeId}>{target.firstName} {target.lastName} · {target.employeeCode} · {target.departmentName || "No department"}</option>)}</SelectInput></Field> : <Field label="Report subject"><TextInput disabled value="My attendance" /></Field>}
         <Field label="From date"><TextInput type="date" value={fromDate} max={toDate} onChange={(event) => { setFromDate(event.target.value); setSelectedDatePreset(null); setReport(null); setError(""); setAutoPreviewRevision((revision) => revision + 1); }} /></Field>
         <Field label="To date"><TextInput type="date" value={toDate} min={fromDate} onChange={(event) => { setToDate(event.target.value); setSelectedDatePreset(null); setReport(null); setError(""); setAutoPreviewRevision((revision) => revision + 1); }} /></Field>
       </div>
-      <div className="report-date-presets" role="group" aria-label="Attendance report date range presets" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 7, marginTop: 12 }}>
-        <span className="field-hint" style={{ marginRight: 3 }}>Quick range:</span>
+      <div className="report-date-presets" role="group" aria-label="Attendance report date range presets">
+        <span className="report-presets-label">Quick date range</span>
 <button type="button" className={`button button-sm ${selectedDatePreset === "7d" ? "button-primary" : "button-secondary"}`} aria-pressed={selectedDatePreset === "7d"} onClick={() => applyDatePreset("7d")}>Last 7 days</button>
         <button type="button" className={`button button-sm ${selectedDatePreset === "14d" ? "button-primary" : "button-secondary"}`} aria-pressed={selectedDatePreset === "14d"} onClick={() => applyDatePreset("14d")}>Last 14 days</button>
         <button type="button" className={`button button-sm ${selectedDatePreset === "3m" ? "button-primary" : "button-secondary"}`} aria-pressed={selectedDatePreset === "3m"} onClick={() => applyDatePreset("3m")}>Last 3 months</button>
         <button type="button" className={`button button-sm ${selectedDatePreset === "6m" ? "button-primary" : "button-secondary"}`} aria-pressed={selectedDatePreset === "6m"} onClick={() => applyDatePreset("6m")}>Last 6 months</button>
         <button type="button" className={`button button-sm ${selectedDatePreset === "12m" ? "button-primary" : "button-secondary"}`} aria-pressed={selectedDatePreset === "12m"} onClick={() => applyDatePreset("12m")}>Last 12 months</button>
       </div>
-      {selectedTarget ? <div className="report-selected-person"><ProfilePhoto name={`${selectedTarget.firstName} ${selectedTarget.lastName}`} employeeId={selectedTarget.employeeId} currentUser={user.role === "EMPLOYEE" && selectedTarget.employeeId === user.employeeId} /><span><strong>{selectedTarget.firstName} {selectedTarget.lastName}</strong><small>{selectedTarget.employeeCode} · {selectedTarget.departmentName || "No department"}</small></span></div> : null}
-      <div className="report-filter-footer"><p>Organization timezone: <strong>{timeZone}</strong>. Maximum report span: 24 calendar months.</p><div style={{ display: "flex", gap: 8 }}><Button variant="secondary" leading={<FileBarChart size={14} />} busy={generating} disabled={loadingTargets || (!targetId && user.role !== "EMPLOYEE")} onClick={() => void generate()}>Preview report</Button><Button variant="primary" leading={<ArrowDownToLine size={14} />} busy={downloading} disabled={loadingTargets || (!targetId && user.role !== "EMPLOYEE")} onClick={() => void downloadPdf()}>Download PDF</Button></div></div>
+      {selectedTarget ? <div className="report-selected-person">
+        <div className="report-selected-person-label">Selected report subject</div>
+        <ProfilePhoto name={`${selectedTarget.firstName} ${selectedTarget.lastName}`} employeeId={selectedTarget.employeeId} currentUser={user.role === "EMPLOYEE" && selectedTarget.employeeId === user.employeeId} />
+        <span><strong>{selectedTarget.firstName} {selectedTarget.lastName}</strong><small>{selectedTarget.employeeCode} <i>·</i> {selectedTarget.departmentName || "No department"}</small></span>
+        <StatusBadge value={selectedTarget.employmentStatus} />
+      </div> : null}
+      <div className="report-filter-footer">
+        <p><span className="report-timezone-dot" /> Organization timezone <strong>{timeZone}</strong><span className="report-footer-separator">·</span> Maximum span 24 months</p>
+        <div className="report-action-group"><Button variant="secondary" leading={<FileBarChart size={14} />} busy={generating} disabled={loadingTargets || (!targetId && user.role !== "EMPLOYEE")} onClick={() => void generate()}>Preview report</Button><Button variant="primary" leading={<ArrowDownToLine size={14} />} busy={downloading} disabled={loadingTargets || (!targetId && user.role !== "EMPLOYEE")} onClick={() => void downloadPdf()}>Download PDF</Button></div>
+      </div>
     </Panel>
     {report ? <>
       <div className="report-kpis"><Panel className="metric-card"><span className="metric-label">Attendance days recorded</span><strong className="metric-value">{report.attendanceRecordCount ?? 0}</strong></Panel><Panel className="metric-card"><span className="metric-label">Hours worked</span><strong className="metric-value">{totalWorkedHours.toFixed(1)}</strong></Panel><Panel className="metric-card"><span className="metric-label">Approved overtime hours</span><strong className="metric-value">{totalPayableOvertime.toFixed(1)}</strong></Panel></div>
