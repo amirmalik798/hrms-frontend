@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity, AlertCircle, ArrowRight, ArrowUpRight, Building2, CalendarClock, CheckCircle2, Clock3, FileClock, Mail, ShieldCheck, Users, Wallet } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
@@ -41,6 +41,7 @@ export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const pendingLeaveCountRef = useRef<number | null>(null);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true); setError("");
@@ -55,7 +56,19 @@ export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
       } else if (role === "HR_MANAGER") {
         result = await apiRequest<DashboardData>("/hr-manager/overview");
       } else if (role === "DEPARTMENT_MANAGER") {
-        result = await apiRequest<DashboardData>("/department-manager/overview");
+        const [overview, leavePayload] = await Promise.all([
+          apiRequest<DashboardData>("/department-manager/overview"),
+          apiRequest<{ requests?: Array<{ employeeId?: string; status?: string }> }>("/leave/requests").catch(() => null),
+        ]);
+        if (Array.isArray(leavePayload?.requests)) {
+          pendingLeaveCountRef.current = leavePayload.requests.filter((request) =>
+            request.status === "PENDING" && request.employeeId !== user.employeeId,
+          ).length;
+        }
+        result = {
+          ...overview,
+          reviewCounts: { ...overview.reviewCounts, leave: pendingLeaveCountRef.current },
+        };
       } else {
         const resultEvents = await apiRequest<DashboardData>("/attendance/events");
         result = resultEvents;
@@ -64,7 +77,7 @@ export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to load your overview.");
     } finally { if (!silent) setLoading(false); }
-  }, [role]);
+  }, [role, user.employeeId]);
 
   useEffect(() => { void load(); }, [load]);
   useSmartRefresh(() => load(true));
@@ -90,7 +103,7 @@ export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
       { label: "Team members", value: team.total, note: `${formatNumber(numberValue(team, "active") ?? 0)} active`, icon: Users },
       { label: "Assigned departments", value: data?.departments?.length ?? 0, note: "Your management scope", icon: Building2 },
       { label: "Items to review", value: reviews.total, note: "Corrections and overtime", icon: ClipboardIcon },
-      { label: "Pending leave", value: reviews.leave ?? 0, note: "Awaiting your review", icon: CalendarClock },
+      { label: "Pending leave", value: numberValue(reviews, "leave") ?? "—", note: numberValue(reviews, "leave") === null ? "Leave review count unavailable" : "Awaiting your review", icon: CalendarClock },
     ];
     return [
       { label: "My latest activity", value: data?.events?.length ?? 0, note: "Recent attendance events", icon: Activity },
