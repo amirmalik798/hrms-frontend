@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Activity, Bell, Building2, Check, ChevronDown, ChevronsLeft, ChevronsRight, Command, LogOut, Menu, Moon, Search, Settings2, ShieldCheck, Sun, X } from "lucide-react";
+import { Activity, Bell, Building2, Check, ChevronDown, ChevronsLeft, ChevronsRight, LogOut, Menu, Moon, Search, Settings2, ShieldCheck, Sun, X } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { workspaceNavigation, roleLabels, type NavItem } from "@/lib/workspace-config";
 import { apiRequest, pickArray, stringValue } from "@/lib/api-client";
@@ -121,7 +121,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             <button type="button" className="icon-button mobile-menu-button" onClick={() => setMobileOpen((value) => !value)} aria-label={mobileOpen ? "Close navigation" : "Open navigation"} aria-expanded={mobileOpen}>{mobileOpen ? <X size={19} /> : <Menu size={19} />}</button>
             <div className="topbar-org"><strong>{user.organizationName}</strong><span>{activeItem?.label ?? roleLabels[user.role]}</span></div>
             <span className="topbar-divider" />
-            <button type="button" className="search-trigger" onClick={() => setCommandOpen(true)}><Search size={15} /><span>Search workspace</span><kbd>⌘ K</kbd></button>
+            <button type="button" className="search-trigger" onClick={() => setCommandOpen(true)}><Search size={15} /><span>Search workspace</span></button>
           </div>
           <div className="topbar-actions">
             <WorkspaceClock timeZone={timeZone} timeZoneStatus={timeZoneStatus} showAttendanceStatus={user.role !== "ORGANIZATION_ADMIN"} />
