@@ -15,6 +15,7 @@ import { formatDate, formatMoney, humanize } from "@/lib/format";
 import { buildSalarySlipDocument, type SalarySlipPayload } from "@/features/payroll/salary-slip-document";
 import { useSmartRefresh } from "@/lib/smart-refresh";
 import { useAttendanceRefresh } from "@/lib/attendance-events";
+import { PersonalEarningsWorkspace } from "@/features/workspace/PersonalEarningsWorkspace";
 
 interface Payment {
   id?: string; employeeId: string; employeeCode?: string; firstName?: string; lastName?: string;
@@ -267,6 +268,7 @@ export function PayrollWorkspace() {
       </tr>)}</tbody></table></div> : null}
       <div className="table-footer"><span>Payment records are scoped by your role and department.</span><span>Calculations are provided by the backend; HRMS does not transfer money.</span></div>
     </Panel>
+    {user.role === "EMPLOYEE" ? <div style={{ marginTop: 16 }}><PersonalEarningsWorkspace embedded monthOverride={month} /></div> : null}
     <Drawer open={Boolean(selected)} title={targetStatus === "PAID" ? "Record salary as paid" : "Reverse paid status"} description="Review the employee, amount, currency, and period before recording a payment status change." onClose={() => setSelected(null)} width="standard" footer={<><Button variant="secondary" onClick={() => setSelected(null)}>Cancel</Button><Button variant={targetStatus === "PAID" ? "primary" : "danger"} busy={saving} onClick={() => document.querySelector<HTMLFormElement>("#salary-payment-form")?.requestSubmit()}>{targetStatus === "PAID" ? "Confirm paid status" : "Confirm reversal"}</Button></>}>
       {selected ? <form id="salary-payment-form" onSubmit={savePayment}>
         <div className="detail-list" style={{ marginBottom:17 }}><div><span>Employee</span><strong>{selected.firstName} {selected.lastName} · {selected.employeeCode}</strong></div><div><span>Pay period</span><strong>{month}</strong></div><div><span>Calculated payable amount</span><strong style={{ fontSize:18 }}>{formatMoney(selected.calculatedAmount, selected.currencyCode)}</strong></div><div><span>Worked hours</span><strong>{duration(selected.workedMinutes)}</strong></div><div><span>New status</span><strong>{targetStatus === "PAID" ? "Paid" : "Unpaid"}</strong></div></div>

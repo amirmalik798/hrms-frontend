@@ -55,7 +55,7 @@ function validateOwnSlipRange(fromMonth: string, toMonth: string, organizationMo
   return count;
 }
 
-export function PersonalEarningsWorkspace() {
+export function PersonalEarningsWorkspace({ embedded = false, monthOverride }: { embedded?: boolean; monthOverride?: string } = {}) {
   const { user, workDate, currencyCode, timeZone } = useWorkspace();
   const organizationMonth = (workDate || new Date().toISOString().slice(0, 10)).slice(0, 7);
   const [slipFromMonth, setSlipFromMonth] = useState(organizationMonth);
@@ -64,12 +64,13 @@ export function PersonalEarningsWorkspace() {
   const [slipRangeTouched, setSlipRangeTouched] = useState(false);
   const [slipError, setSlipError] = useState("");
   const [slipNotice, setSlipNotice] = useState("");
-  const [month, setMonth] = useState((workDate || new Date().toISOString().slice(0, 10)).slice(0, 7));
+  const [ownMonth, setOwnMonth] = useState((workDate || new Date().toISOString().slice(0, 10)).slice(0, 7));
+  const month = monthOverride || ownMonth;
   const [monthChanged, setMonthChanged] = useState(false);
   const [data, setData] = useState<EarningsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  useEffect(() => { if (workDate && !monthChanged) setMonth(workDate.slice(0, 7)); }, [workDate, monthChanged]);
+  useEffect(() => { if (!monthOverride && workDate && !monthChanged) setOwnMonth(workDate.slice(0, 7)); }, [workDate, monthChanged, monthOverride]);
   useEffect(() => {
     if (workDate && !slipRangeTouched) {
       const currentOrganizationMonth = workDate.slice(0, 7);
@@ -130,19 +131,19 @@ export function PersonalEarningsWorkspace() {
   }
 
   return <>
-    <PageHeader eyebrow="My account · Compensation" title="My earnings" description="Your personal earnings estimate from recorded working time and approved overtime. This is separate from organization payroll management." />
-    <div className="toolbar" style={{ marginBottom: 14 }}>
-      <label className="field" style={{ maxWidth: 190 }}><span className="field-label">Pay period</span><input className="text-input" type="month" value={month} onChange={(event) => { setMonth(event.target.value); setMonthChanged(true); }} /></label>
+    {!embedded ? <PageHeader eyebrow="My account · Compensation" title="My earnings" description="Your personal earnings estimate from recorded working time and approved overtime." /> : null}
+    {!embedded ? <div className="toolbar" style={{ marginBottom: 14 }}>
+      <label className="field" style={{ maxWidth: 190 }}><span className="field-label">Pay period</span><input className="text-input" type="month" value={month} onChange={(event) => { setOwnMonth(event.target.value); setMonthChanged(true); }} /></label>
       <span className="date-chip"><CalendarDays size={13} /> {zone}</span><span style={{ marginLeft: "auto" }} />
       <span style={{ color: "var(--muted)", fontSize: 12 }}>{data?.employeeName || user.displayName}</span>
-    </div>
+    </div> : null}
     {error ? <div role="alert" className="form-error" style={{ marginBottom: 14 }}>{error}</div> : null}
     {!error && summary ? <>
-      <div className="page-grid grid-3" style={{ marginBottom: 16 }}>
+      {!embedded ? <div className="page-grid grid-3" style={{ marginBottom: 16 }}>
         <Panel className="metric-card"><div className="metric-icon"><Wallet size={17} /></div><div className="metric-label">Estimated earnings</div><div className="metric-value">{formatMoney(summary.estimatedSalary, currency)}</div><div className="metric-foot">For {month} · not a final payslip</div></Panel>
         <Panel className="metric-card"><div className="metric-icon"><Clock3 size={17} /></div><div className="metric-label">Recorded work</div><div className="metric-value">{duration(summary.totalWorkedMinutes)}</div><div className="metric-foot">{summary.daysWorked} days with recorded work</div></Panel>
         <Panel className="metric-card"><div className="metric-icon"><CalendarDays size={17} /></div><div className="metric-label">Approved overtime</div><div className="metric-value">{duration(summary.payableOvertimeMinutes)}</div><div className="metric-foot">Potential unapproved overtime: {duration(summary.excessUnapprovedOvertimeMinutes)}</div></Panel>
-      </div>
+      </div> : null}
       {summary.currencyMismatch ? <div className="form-error" role="alert" style={{ marginBottom: 14 }}>More than one currency appears in this period ({summary.currencyCodes.join(", ")}). The total is withheld until the pay-rate history is consistent.</div> : null}
       {incompleteRateDays > 0 || summary.daysWithMissingRates > 0 || !data?.hasRates ? <div className="info-callout" style={{ marginBottom: 14 }}><AlertCircle size={15} /><span>Some payable time does not have a complete effective pay rate. Affected amounts are not estimated. Ask HR to review your pay-rate history.</span></div> : null}
       {data?.disclaimer ? <div className="info-callout" style={{ marginBottom: 14 }}>{data.disclaimer}</div> : null}
