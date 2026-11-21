@@ -106,8 +106,8 @@ export function MyRequestsWorkspace() {
       <div className="toolbar"><div className="toolbar-left"><div className="segmented-tabs" role="tablist" aria-label="Request type">{(["all", "corrections", "overtime"] as const).map((value) => <button key={value} type="button" role="tab" aria-selected={tab === value} className={`segment-tab ${tab === value ? "segment-tab-active" : ""}`} onClick={() => setTab(value)}>{value === "all" ? "All requests" : humanize(value)}</button>)}</div></div><span style={{ color: "var(--muted)", fontSize: 11 }}>{loading ? "Updating…" : `${displayedCorrections.length + displayedOvertime.length} requests`}</span></div>
       {loading && !corrections.length && !overtime.length ? <div className="loading-state">Loading your request history…</div> : null}
       {!loading && !displayedCorrections.length && !displayedOvertime.length ? <div className="empty-state"><div className="state-icon"><FileClock size={18} /></div><h3>No requests yet</h3><p>When you submit an attendance correction or advance overtime request, its status will appear here.</p></div> : null}
-      {displayedCorrections.length ? <RequestSection title="Attendance corrections" items={displayedCorrections.map((item) => ({ id: item.id, title: `${humanize(item.eventType)} · ${formatDate(item.workDate, timeZone)}`, detail: item.reason, status: item.status, createdAt: item.createdAt, note: item.reviewerNote }))} /> : null}
-      {displayedOvertime.length ? <RequestSection title="Advance overtime" items={displayedOvertime.map((item) => ({ id: item.id, title: `${formatDate(item.workDate, timeZone)} · ${formatMinutes(item.requestedMinutes)}`, detail: item.reason, status: item.status, createdAt: item.requestedAt, note: item.reviewerNote, meta: item.approvedMinutes ? `${formatMinutes(item.approvedMinutes)} approved` : "Awaiting approval" }))} /> : null}
+      {displayedCorrections.length ? <RequestSection timeZone={timeZone} title="Attendance corrections" items={displayedCorrections.map((item) => ({ id: item.id, title: `${humanize(item.eventType)} · ${formatDate(item.workDate, timeZone)}`, detail: item.reason, status: item.status, createdAt: item.createdAt, note: item.reviewerNote }))} /> : null}
+      {displayedOvertime.length ? <RequestSection timeZone={timeZone} title="Advance overtime" items={displayedOvertime.map((item) => ({ id: item.id, title: `${formatDate(item.workDate, timeZone)} · ${formatMinutes(item.requestedMinutes)}`, detail: item.reason, status: item.status, createdAt: item.requestedAt, note: item.reviewerNote, meta: item.status === "PENDING" ? "Awaiting approval" : item.status === "APPROVED" ? `${formatMinutes(item.approvedMinutes ?? 0)} approved` : undefined }))} /> : null}
     </Panel>
     <Drawer open={drawer === "correction"} title="Request an attendance correction" description="Request a correction to an existing punch or report a missing punch. All times are interpreted in your organization's timezone." onClose={() => { if (!saving) setDrawer(null); }} footer={<><Button variant="secondary" disabled={saving} onClick={() => setDrawer(null)}>Cancel</Button><Button variant="primary" busy={saving} onClick={() => document.querySelector<HTMLFormElement>("#correction-request-form")?.requestSubmit()}>Submit request</Button></>}>
       <form id="correction-request-form" onSubmit={submitCorrection}>
@@ -148,7 +148,25 @@ function makeCalendarUrl(role: string, date: string) {
 }
 function nextDate(value: string) { const date = new Date(`${value}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + 1); return date.toISOString().slice(0, 10); }
 function formatMinutes(value: number) { const hours = Math.floor(value / 60); const minutes = value % 60; return hours ? `${hours}h ${minutes}m` : `${minutes}m`; }
-function RequestSection({ title, items }: { title: string; items: { id: string; title: string; detail: string; status: string; createdAt: string; note?: string | null; meta?: string }[] }) {
-  return <section className="request-section"><header className="request-section-heading"><h3>{title}</h3><span>{items.length}</span></header>{items.map((item) => <article className="request-item" key={item.id}><div className="request-item-main"><strong>{item.title}</strong><p>{item.detail}</p>{item.note ? <small>Reviewer: {item.note}</small> : null}</div><div className="request-item-side"><StatusBadge value={item.status} />{item.meta ? <small>{item.meta}</small> : null}<small>{formatDate(item.createdAt)}</small></div></article>)}</section>;
+function formatRequestTimestamp(value: string, timeZone: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone,
+    }).format(date);
+  } catch {
+    return value;
+  }
+}
+
+function RequestSection({ title, items, timeZone }: { title: string; timeZone: string; items: { id: string; title: string; detail: string; status: string; createdAt: string; note?: string | null; meta?: string }[] }) {
+  return <section className="request-section"><header className="request-section-heading"><h3>{title}</h3><span>{items.length}</span></header>{items.map((item) => <article className="request-item" key={item.id}><div className="request-item-main"><strong>{item.title}</strong><p>{item.detail}</p>{item.note ? <small>Reviewer: {item.note}</small> : null}</div><div className="request-item-side"><StatusBadge value={item.status} />{item.meta ? <small>{item.meta}</small> : null}<small>{formatRequestTimestamp(item.createdAt, timeZone)}</small></div></article>)}</section>;
 }
 function ShieldCheckIcon() { return <CalendarClock size={15} />; }
