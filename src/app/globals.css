@@ -861,3 +861,113 @@ body {
   .workforce-status-transition { grid-template-columns: 1fr; }
   .attendance-employee-search { width: 100%; min-width: min(100%, 240px); }
 }
+
+
+/* Department Manager team payslip drawer: separated identity, currency and period controls. */
+.team-slip-member-card {
+  display: grid;
+  gap: 14px;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+.team-slip-member-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding-bottom: 13px;
+  border-bottom: 1px solid var(--border);
+}
+.team-slip-member-name {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.team-slip-member-name > span,
+.team-slip-member-meta > div > span {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+.team-slip-member-name > strong {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 740;
+  overflow-wrap: anywhere;
+}
+.team-slip-member-name > small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.team-slip-member-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.team-slip-member-meta > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.team-slip-member-meta > div > strong {
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.team-slip-period {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+.team-slip-section-heading {
+  display: grid;
+  gap: 3px;
+}
+.team-slip-section-heading > strong {
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 740;
+}
+.team-slip-section-heading > span {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.team-slip-month-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.team-slip-note {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  margin-top: 16px;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+.team-slip-note-icon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: var(--accent-strong);
+}
+.team-slip-note p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.65;
+}
+@media (max-width: 560px) {
+  .team-slip-member-meta,
+  .team-slip-month-grid {
+    grid-template-columns: 1fr;
+  }
+}

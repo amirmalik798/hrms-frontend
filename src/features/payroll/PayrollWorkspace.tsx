@@ -425,9 +425,31 @@ export function PayrollWorkspace() {
     </Drawer>
     <Drawer open={Boolean(teamSlipTarget)} title="Generate multi-month team member payslip" description="Select a period for this workforce member. Every monthly request is checked by the backend against your currently assigned departments." onClose={() => { if (!teamSlipBusy) { setTeamSlipTarget(null); setTeamSlipError(""); } }} width="standard" footer={<><Button variant="secondary" disabled={teamSlipBusy} onClick={() => setTeamSlipTarget(null)}>Cancel</Button><Button variant="primary" leading={<FileDown size={14} />} busy={teamSlipBusy} disabled={!teamSlipStartMonth || !teamSlipEndMonth || teamSlipStartMonth > teamSlipEndMonth} onClick={() => void generateTeamMemberPayslip()}>Generate & print payslip</Button></>}>
       {teamSlipTarget ? <div className="form-section">
-        <div className="detail-list"><div><span>Workforce member</span><strong>{teamSlipTarget.firstName} {teamSlipTarget.lastName} · {teamSlipTarget.employeeCode}</strong></div><div><span>Department</span><strong>{teamSlipTarget.departmentName || "—"}</strong></div><div><span>Organization currency</span><strong>{organizationCurrencyCode || "Unavailable"}</strong></div></div>
-        <div className="form-grid"><Field label="From month"><TextInput type="month" min="2000-01" max={teamSlipEndMonth || currentOrganizationMonth} value={teamSlipStartMonth} disabled={teamSlipBusy} onChange={(event) => { setTeamSlipStartMonth(event.target.value); setTeamSlipError(""); }} /></Field><Field label="To month"><TextInput type="month" min={teamSlipStartMonth || "2000-01"} max={currentOrganizationMonth} value={teamSlipEndMonth} disabled={teamSlipBusy} onChange={(event) => { setTeamSlipEndMonth(event.target.value); setTeamSlipError(""); }} /></Field></div>
-        <div className="form-note"><AlertCircle size={15} /> This manager statement includes backend-calculated monthly hours, payable time, calculated pay and payment status. The detailed daily payslip remains available to HR Managers and Organization Admins. Up to 24 months can be included.</div>
+        <section className="team-slip-member-card" aria-label="Selected workforce member">
+          <div className="team-slip-member-identity">
+            <ProfilePhoto name={`${teamSlipTarget.firstName} ${teamSlipTarget.lastName}`.trim()} employeeId={teamSlipTarget.employeeId} className="user-avatar" />
+            <div className="team-slip-member-name">
+              <span>Workforce member</span>
+              <strong>{teamSlipTarget.firstName} {teamSlipTarget.lastName}</strong>
+              <small>{teamSlipTarget.employeeCode || "Employee code unavailable"}</small>
+            </div>
+          </div>
+          <div className="team-slip-member-meta">
+            <div><span>Department</span><strong>{teamSlipTarget.departmentName || "Not assigned"}</strong></div>
+            <div><span>Organization currency</span><strong>{organizationCurrencyCode || "Unavailable"}</strong></div>
+          </div>
+        </section>
+        <section className="team-slip-period" aria-label="Payslip date range">
+          <div className="team-slip-section-heading">
+            <strong>Statement period</strong>
+            <span>Choose inclusive start and end months</span>
+          </div>
+          <div className="team-slip-month-grid">
+            <Field label="From month"><TextInput type="month" min="2000-01" max={teamSlipEndMonth || currentOrganizationMonth} value={teamSlipStartMonth} disabled={teamSlipBusy} onChange={(event) => { setTeamSlipStartMonth(event.target.value); setTeamSlipError(""); }} /></Field>
+            <Field label="To month"><TextInput type="month" min={teamSlipStartMonth || "2000-01"} max={currentOrganizationMonth} value={teamSlipEndMonth} disabled={teamSlipBusy} onChange={(event) => { setTeamSlipEndMonth(event.target.value); setTeamSlipError(""); }} /></Field>
+          </div>
+        </section>
+        <div className="team-slip-note"><span className="team-slip-note-icon"><AlertCircle size={16} /></span><p>This manager statement includes backend-calculated monthly hours, payable time, calculated pay and payment status. The detailed daily payslip remains available to HR Managers and Organization Admins. You can include up to 24 months.</p></div>
         {teamSlipTarget.currencyMismatch || !paymentUsesOrganizationCurrency(teamSlipTarget.currencyCode, organizationCurrencyCode, teamSlipTarget.currencyMismatch) ? <div role="alert" className="form-error">This employee currently has a pay-rate currency mismatch ({normalizeCurrencyCode(teamSlipTarget.currencyCode) || "unavailable"} vs {organizationCurrencyCode || "organization currency unavailable"}). The statement cannot include a misleading amount until HR resolves the underlying rate history.</div> : null}
         {teamSlipError ? <div role="alert" className="form-error">{teamSlipError}</div> : null}
       </div> : null}
