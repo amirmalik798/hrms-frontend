@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, CalendarDays } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
@@ -62,6 +62,8 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
   const [timeZone, setTimeZone] = useState("Africa/Kigali");
   const [rangeReady, setRangeReady] = useState(false);
   const [rangeRetry, setRangeRetry] = useState(0);
+  const loadSequenceRef = useRef(0);
+  const [verifiedWorkDate, setVerifiedWorkDate] = useState<string | null>(workDate);
   const selfOnly = pageKey === "my-attendance" || user.role === "EMPLOYEE";
 
   // Seed the default range from the organization's authoritative work date.
@@ -80,6 +82,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
         const start = authoritativeDate;
         const end = authoritativeDate;
         if (!active) return;
+        setVerifiedWorkDate(authoritativeDate);
         setTimeZone(initial.timeZone || "Africa/Kigali");
         setFromDate(start); setToDate(end);
         setAppliedFromDate(start); setAppliedToDate(end);
@@ -105,6 +108,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
       setError("Choose valid dates and make sure the From date is not after the To date.");
       return;
     }
+    const requestId = ++loadSequenceRef.current;
     if (!silent) setLoading(true);
     setError("");
     try {
@@ -128,6 +132,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
           const query = new URLSearchParams({ fromDate: chunk.fromDate, toDate: chunk.toDate, offset: String(offset) });
           if (selfOnly) query.set("scope", "self");
           const result = await apiRequest<CalendarPayload>(`/attendance/calendar?${query.toString()}`);
+          if (requestId !== loadSequenceRef.current) return;
           latestResult = result;
           if (Array.isArray(result.entries)) entries.push(...result.entries);
           if (!result.hasMore) break;
@@ -137,17 +142,21 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
           if (page === 499) throw new Error("This date range contains more attendance records than can be displayed at once. Narrow the date range and try again.");
         }
       }
+      if (requestId !== loadSequenceRef.current) return;
       setEntries(entries);
+      if (latestResult?.today) setVerifiedWorkDate(latestResult.today);
       if (latestResult?.timeZone) setTimeZone(latestResult.timeZone);
     } catch (caught) {
-      if (!silent) setEntries([]);
-      setError(caught instanceof Error ? caught.message : "Unable to load attendance for the selected date range.");
-    } finally { if (!silent) setLoading(false); }
+      if (requestId === loadSequenceRef.current) {
+        if (!silent) setEntries([]);
+        setError(caught instanceof Error ? caught.message : "Unable to load attendance for the selected date range.");
+      }
+    } finally { if (!silent && requestId === loadSequenceRef.current) setLoading(false); }
   }, [appliedFromDate, appliedToDate, selfOnly]);
 
   useEffect(() => { if (rangeReady) void load(); }, [load, rangeReady]);
   useAttendanceRefresh(() => { void load(true); }, rangeReady);
-  useSmartRefresh(() => { if (rangeReady) return load(true); if (error) setRangeRetry((value) => value + 1); }, rangeReady || Boolean(error));
+  useSmartRefresh(() => { if (rangeReady) return load(true); if (error) setRangeRetry((value) => value + 1); }, (rangeReady && !loading) || Boolean(error));
 
   function applyDateRange() {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
@@ -158,23 +167,29 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
       setError("The From date must be on or before the To date.");
       return;
     }
+    loadSequenceRef.current += 1;
     setError("");
+    setEntries([]);
+    setLoading(true);
     setAppliedFromDate(fromDate);
     setAppliedToDate(toDate);
   }
 
   function applyAttendancePreset(days?: number, months?: number) {
-    const end = workDate || appliedToDate || getLocalISODate();
+    const end = workDate || verifiedWorkDate || appliedToDate || getLocalISODate();
     let start = end;
     if (months) {
-      start = shiftDate(shiftMonthsClamped(end, -months), 1);
+      start = shiftMonthsClamped(end, -months);
     } else if (days) {
       start = shiftDate(end, -(days - 1));
     }
+    loadSequenceRef.current += 1;
     setFromDate(start);
     setToDate(end);
     setAppliedFromDate(start);
     setAppliedToDate(end);
+    setEntries([]);
+    setLoading(true);
     setError("");
   }
 
@@ -190,7 +205,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
         <div className="toolbar-left" style={{ alignItems: "end", flexWrap: "wrap" }}>
           <label className="field" style={{ minWidth: 160 }}><span className="field-label">From date</span><input className="text-input" type="date" value={fromDate} max={toDate || undefined} onChange={(event) => setFromDate(event.target.value)} /></label>
           <label className="field" style={{ minWidth: 160 }}><span className="field-label">To date</span><input className="text-input" type="date" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} /></label>
-          <Button variant="primary" leading={<CalendarDays size={14} />} busy={loading} disabled={!rangeReady || !fromDate || !toDate || fromDate > toDate} onClick={applyDateRange}>Apply dates</Button>
+          <Button variant="primary" leading={<CalendarDays size={14} />} disabled={!rangeReady || !fromDate || !toDate || fromDate > toDate} onClick={applyDateRange}>{loading ? "Loading…" : "Apply custom range"}</Button>
           <div className="attendance-range-presets" role="group" aria-label="Attendance date presets">
             {[
               { label: "Last 7 days", days: 7 },
@@ -203,13 +218,14 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
                 key={preset.label}
                 size="sm"
                 variant="secondary"
-                disabled={loading || !rangeReady}
+                disabled={!rangeReady}
                 onClick={() => applyAttendancePreset(preset.days, preset.months)}
               >
                 {preset.label}
               </Button>
             ))}
           </div>
+          <span className="field-hint" style={{ alignSelf: "center" }}>Choose From and To dates, then apply the custom range. Longer ranges are loaded in smaller calendar windows.</span>
         </div>
         <span style={{ color: "var(--muted)", fontSize: 11 }}>{loading ? "Loading…" : `${entries.length} records`}</span>
       </div>

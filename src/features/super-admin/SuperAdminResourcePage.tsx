@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { ArrowLeft, Eye, Plus, Search, ShieldCheck } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -29,6 +29,12 @@ const configs: Record<SuperAdminSection, SectionConfig> = {
   "organization-detail": { title: "Organization details", description: "Review the tenant record, send its initial administrator invitation, and manage its lifecycle.", eyebrow: "Tenant record", endpoint: "/organizations", keys: [], columns: [] },
   "organization-new": { title: "Create organization", description: "Register a new organization and initialize its approved organization role hierarchy.", eyebrow: "Tenant onboarding", endpoint: "/organizations", keys: [], columns: [] },
 };
+
+function submitSupportOnEnter(event: KeyboardEvent<HTMLTextAreaElement>, busy: boolean) {
+  if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+  event.preventDefault();
+  if (!busy) event.currentTarget.form?.requestSubmit();
+}
 
 function cellValue(row: Record<string, unknown>, key: string): string {
   const value = row[key];
@@ -200,7 +206,7 @@ export function SuperAdminResourcePage({ section, organizationId }: { section: S
   async function sendSupportReply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const id = supportConversation?.id;
-    if (typeof id !== "string" || !supportMessage.trim()) return;
+    if (typeof id !== "string" || !supportMessage.trim() || supportBusy) return;
     setSupportBusy(true); setError("");
     try {
       await apiRequest(`/platform-support/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ message: supportMessage.trim() }) });
@@ -295,11 +301,11 @@ export function SuperAdminResourcePage({ section, organizationId }: { section: S
       </form>
     </Drawer>
 
-    <Drawer open={Boolean(supportConversation)} title={stringValue(supportConversation ?? {},"subject") || "Support conversation"} description={`${stringValue(supportConversation ?? {},"organization_name") || "Organization"} · ${stringValue(supportConversation ?? {},"status") || "OPEN"}`} onClose={()=>setSupportConversation(null)}>
-      <div className="page-grid" style={{gap:12}}>
-        <div className="toolbar" style={{padding:0,border:0}}><span className="field-hint">Conversation history</span><div className="toolbar-right">{stringValue(supportConversation ?? {},"status") === "OPEN" ? <Button size="sm" variant="secondary" busy={supportBusy} onClick={()=>void updateSupportStatus("CLOSED")}>Close conversation</Button> : <Button size="sm" variant="secondary" busy={supportBusy} onClick={()=>void updateSupportStatus("OPEN")}>Reopen conversation</Button>}</div></div>
-        {supportMessages.length ? supportMessages.map((message,index)=><div key={stringValue(message,"id") || index} className="panel panel-pad"><div style={{display:"flex",justifyContent:"space-between",gap:10}}><strong>{stringValue(message,"senderName") || "User"}</strong><span className="field-hint">{formatDate(stringValue(message,"createdAt"))}</span></div><p style={{whiteSpace:"pre-wrap",margin:"9px 0 0",color:"var(--text)"}}>{stringValue(message,"body")}</p></div>) : <div className="empty-state"><h3>No messages</h3><p>There are no messages in this conversation yet.</p></div>}
-        {stringValue(supportConversation ?? {},"status") === "OPEN" ? <form onSubmit={sendSupportReply} className="page-grid" style={{gap:10}}><Field label="Reply"><TextArea required maxLength={4000} value={supportMessage} onChange={(event)=>setSupportMessage(event.target.value)} placeholder="Write a response to the organization administrator…"/></Field><div style={{display:"flex",justifyContent:"flex-end"}}><Button type="submit" variant="primary" busy={supportBusy}>Send reply</Button></div></form> : <div className="form-note">This conversation is closed. Reopen it to send another reply.</div>}
+    <Drawer open={Boolean(supportConversation)} title={stringValue(supportConversation ?? {},"subject") || "Support conversation"} description={`${stringValue(supportConversation ?? {},"organization_name") || "Organization"} · ${stringValue(supportConversation ?? {},"status") || "OPEN"}`} onClose={()=>{ if (!supportBusy) setSupportConversation(null); }}>
+      <div className="platform-support-thread" style={{display:"flex",flexDirection:"column",height:"min(620px, calc(100dvh - 250px))",minHeight:280,overflow:"hidden",gap:12}}>
+        <div className="toolbar" style={{padding:0,border:0,flex:"0 0 auto"}}><span className="field-hint">Conversation history</span><div className="toolbar-right">{stringValue(supportConversation ?? {},"status") === "OPEN" ? <Button size="sm" variant="secondary" busy={supportBusy} onClick={()=>void updateSupportStatus("CLOSED")}>Close conversation</Button> : <Button size="sm" variant="secondary" busy={supportBusy} onClick={()=>void updateSupportStatus("OPEN")}>Reopen conversation</Button>}</div></div>
+        <div className="platform-support-history" style={{flex:"1 1 auto",minHeight:0,overflowY:"auto",overscrollBehavior:"contain",display:"flex",flexDirection:"column",gap:10,paddingRight:4}}>{supportMessages.length ? supportMessages.map((message,index)=><div key={stringValue(message,"id") || index} className="panel panel-pad"><div style={{display:"flex",justifyContent:"space-between",gap:10}}><strong>{stringValue(message,"senderName") || "User"}</strong><span className="field-hint">{formatDate(stringValue(message,"createdAt"))}</span></div><p style={{whiteSpace:"pre-wrap",margin:"9px 0 0",color:"var(--text)"}}>{stringValue(message,"body")}</p></div>) : <div className="empty-state"><h3>No messages</h3><p>There are no messages in this conversation yet.</p></div>}</div>
+        {stringValue(supportConversation ?? {},"status") === "OPEN" ? <form onSubmit={sendSupportReply} className="page-grid" style={{gap:10,flex:"0 0 auto"}}><Field label="Reply"><TextArea required maxLength={4000} value={supportMessage} onChange={(event)=>setSupportMessage(event.target.value)} onKeyDown={(event)=>submitSupportOnEnter(event,supportBusy)} placeholder="Write a response… Press Enter to send, Shift+Enter for a new line."/></Field><div style={{display:"flex",justifyContent:"flex-end"}}><Button type="submit" variant="primary" busy={supportBusy}>Send reply</Button></div></form> : <div className="form-note" style={{flex:"0 0 auto"}}>This conversation is closed. Reopen it to send another reply.</div>}
       </div>
     </Drawer>
 
