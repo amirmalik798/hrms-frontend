@@ -304,7 +304,8 @@ export function PayrollWorkspace() {
   }, [slipTarget, slipStartMonth, slipEndMonth, currentOrganizationMonth, organizationCurrencyCode]);
 
   async function printIndividualSlip() {
-    if (!slipTarget || slipPrinting || slipLoading) return;
+    const target = slipTarget;
+    if (!target || slipPrinting || slipLoading) return;
     try { validatePayslipRange(slipStartMonth, slipEndMonth, currentOrganizationMonth); }
     catch (caught) { setSlipError(caught instanceof Error ? caught.message : "Choose a valid salary-slip period."); return; }
     const printWindow = window.open("", "_blank");
@@ -317,7 +318,7 @@ export function PayrollWorkspace() {
       const params = new URLSearchParams({ startMonth: slipStartMonth, endMonth: slipEndMonth });
       const latest = await apiRequest<SalarySlipPayload>(`/payroll/payslips/${encodeURIComponent(target.employeeId)}?${params.toString()}`);
       const count = monthOrdinal(slipEndMonth) - monthOrdinal(slipStartMonth) + 1;
-      if (!latest.employee || latest.employee.id !== slipTarget.employeeId || latest.startMonth !== slipStartMonth || latest.endMonth !== slipEndMonth || !Array.isArray(latest.months) || latest.months.length !== count) throw new Error("The latest salary-slip data was incomplete. Adjust the selected month range and try again.");
+      if (!latest.employee || latest.employee.id !== target.employeeId || latest.startMonth !== slipStartMonth || latest.endMonth !== slipEndMonth || !Array.isArray(latest.months) || latest.months.length !== count) throw new Error("The latest salary-slip data was incomplete. Adjust the selected month range and try again.");
       assertSalarySlipUsesOrganizationCurrency(latest, organizationCurrencyCode);
       if (!printWindow.closed) {
         printWindow.document.open(); printWindow.document.write(buildSalarySlipDocument(latest)); printWindow.document.close();
