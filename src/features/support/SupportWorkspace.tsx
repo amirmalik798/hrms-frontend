@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { CircleHelp, Inbox, MessageCircle, RefreshCw, Send } from "lucide-react";
+import { CircleHelp, Inbox, MessageCircle, Send } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, TextArea, TextInput } from "@/components/ui/Field";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { apiRequest } from "@/lib/api-client";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 import { formatDate } from "@/lib/format";
 
 interface Conversation {
@@ -90,13 +91,10 @@ export function SupportWorkspace() {
     if (!selectedId && items.length && !compose) setSelectedId(items[0].id);
     if (selectedId && items.length && !items.some((item) => item.id === selectedId)) setSelectedId("");
   }, [items, selectedId, compose]);
-  useEffect(() => {
-    if (!selectedId) return;
-    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void loadThread(selectedId, true); }, 15000);
-    const onVisible = () => { if (document.visibilityState === "visible") void loadInbox(true); };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
-  }, [selectedId, loadThread, loadInbox]);
+  useSmartRefresh(() => {
+    void loadInbox(true);
+    if (selectedId) void loadThread(selectedId, true);
+  }, !compose && !busy);
 
   const visibleItems = useMemo(() => items, [items]);
 
@@ -133,9 +131,9 @@ export function SupportWorkspace() {
   }
 
   return <>
-    <PageHeader eyebrow="Communication" title="Platform support" description="Contact the platform team and follow the history of your support conversations." action={<Button variant="secondary" leading={<RefreshCw size={14} />} busy={loading} onClick={() => void loadInbox()}>Refresh</Button>} />
+    <PageHeader eyebrow="Communication" title="Platform support" description="Contact the platform team and follow the history of your support conversations." />
     {notice ? <div className="success-callout" role="status" style={{ marginBottom: 12 }}>{notice}</div> : null}
-    {error ? <div className="form-error" role="alert" style={{ marginBottom: 12 }}>{error} <button className="button button-sm button-ghost" onClick={() => void (selectedId ? loadThread(selectedId) : loadInbox())}>Try again</button></div> : null}
+    {error ? <div className="form-error" role="alert" style={{ marginBottom: 12 }}>{error} The inbox will retry automatically.</div> : null}
     <Panel className="support-panel">
       <div className="support-heading"><div><span className="support-icon"><CircleHelp size={18} /></span><div><h2>Support conversations</h2><p>{unreadTotal} unread message{unreadTotal === 1 ? "" : "s"}</p></div></div><Button variant="primary" leading={<MessageCircle size={14} />} onClick={() => { setCompose(true); setSelectedId(""); setError(""); }}>New support request</Button></div>
       <div className="support-layout">

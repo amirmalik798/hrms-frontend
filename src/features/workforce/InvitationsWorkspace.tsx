@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { apiRequest } from "@/lib/api-client";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 import { formatDate, humanize } from "@/lib/format";
 
 interface Invitation {
@@ -51,8 +52,8 @@ export function InvitationsWorkspace() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError("");
     try {
       const params = new URLSearchParams({ page: String(page), limit: "25", status });
@@ -63,10 +64,11 @@ export function InvitationsWorkspace() {
       setTotalPages(Math.max(1, result.pagination?.totalPages ?? 1));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to load invitations.");
-    } finally { setLoading(false); }
+    } finally { if (!silent) setLoading(false); }
   }, [page, query, status]);
 
   useEffect(() => { void load(); }, [load]);
+  useSmartRefresh(() => load(true), !revokeOpen && !saving);
 
   const visibleSummary = useMemo(() => summary ?? { total: 0, pending: 0, accepted: 0, expired: 0, revoked: 0 }, [summary]);
 
@@ -93,7 +95,7 @@ export function InvitationsWorkspace() {
   }
 
   return <>
-    <PageHeader eyebrow="People" title="Invitations" description="Track onboarding invitations, see whether people have accepted, and safely manage pending access." action={<Button variant="secondary" leading={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>Refresh</Button>} />
+    <PageHeader eyebrow="People" title="Invitations" description="Track onboarding invitations, see whether people have accepted, and safely manage pending access." />
     <div className="metric-grid metric-grid-5" style={{ marginBottom: 16 }}>
       <Metric label="All invitations" value={visibleSummary.total} icon={<Mail size={16} />} />
       <Metric label="Pending" value={visibleSummary.pending} icon={<Clock3 size={16} />} />

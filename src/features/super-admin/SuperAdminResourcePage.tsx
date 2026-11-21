@@ -11,6 +11,7 @@ import { Field, TextArea, TextInput } from "@/components/ui/Field";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ApiError, apiRequest, isRecord, pickArray, stringValue } from "@/lib/api-client";
 import { formatDate, humanize } from "@/lib/format";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 
 export type SuperAdminSection = "organizations" | "organization-admins" | "invitations" | "audit-logs" | "payments" | "support" | "system-health" | "organization-detail" | "organization-new";
 interface Column { key: string; label: string }
@@ -66,13 +67,13 @@ export function SuperAdminResourcePage({ section, organizationId }: { section: S
   const [statusBusy, setStatusBusy] = useState(false);
   const [form, setForm] = useState({ name: "", slug: "", contactEmail: "", contactPhone: "", address: "", country: "" });
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!config.endpoint) {
-      setLoading(false);
+      if (!silent) setLoading(false);
       setError("This page is not available.");
       return;
     }
-    setLoading(true); setError("");
+    if (!silent) setLoading(true); setError("");
     try {
       const url = section === "organization-detail" && organizationId ? `/organizations/${encodeURIComponent(organizationId)}` : config.endpoint;
       const result = await apiRequest<unknown>(url);
@@ -99,9 +100,10 @@ export function SuperAdminResourcePage({ section, organizationId }: { section: S
         setError(caught instanceof Error ? caught.message : "Unable to load this platform resource.");
       }
     }
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   }, [config.endpoint, config.keys, organizationId, section]);
   useEffect(() => { void load(); }, [load]);
+  useSmartRefresh(() => load(true), !createOpen && !selected && !supportConversation && !statusTarget && !saving && !reviewBusy && !adminStatusBusy && !supportBusy && !inviteBusy && section !== "organization-new");
 
   const visibleRows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -234,7 +236,7 @@ export function SuperAdminResourcePage({ section, organizationId }: { section: S
   const singular = config.title.toLowerCase();
   return <>
     {section === "organization-detail" ? <div style={{ marginBottom: 10 }}><Link className="table-link" href="/dashboard/organizations"><ArrowLeft size={14} style={{ display: "inline", verticalAlign: "-2px", marginRight: 5 }}/>Back to organizations</Link></div> : null}
-    <PageHeader eyebrow={config.eyebrow} title={section === "organization-detail" && organization ? organization.name : config.title} description={config.description} action={<>{section === "organizations" ? <Button variant="primary" leading={<Plus size={15}/>} onClick={() => setCreateOpen(true)}>Create organization</Button> : null}<Button variant="secondary" busy={loading} onClick={() => void load()}>Refresh</Button></>} />
+    <PageHeader eyebrow={config.eyebrow} title={section === "organization-detail" && organization ? organization.name : config.title} description={config.description} action={<>{section === "organizations" ? <Button variant="primary" leading={<Plus size={15}/>} onClick={() => setCreateOpen(true)}>Create organization</Button> : null}</>} />
     {notice ? <div className="success-callout" role="status" style={{ marginBottom: 16 }}>{notice}</div> : null}
     {error ? <div className="form-error" role="alert">{error}</div> : null}
 
