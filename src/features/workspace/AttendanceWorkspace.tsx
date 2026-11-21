@@ -151,7 +151,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
         if (!silent) setEntries([]);
         setError(caught instanceof Error ? caught.message : "Unable to load attendance for the selected date range.");
       }
-    } finally { if (!silent && requestId === loadSequenceRef.current) setLoading(false); }
+    } finally { if (requestId === loadSequenceRef.current) setLoading(false); }
   }, [appliedFromDate, appliedToDate, selfOnly]);
 
   useEffect(() => { if (rangeReady) void load(); }, [load, rangeReady]);
