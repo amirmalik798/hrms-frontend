@@ -10,6 +10,7 @@ import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { apiRequest } from "@/lib/api-client";
 import { formatDate, formatMoney, humanize } from "@/lib/format";
 import { buildSalarySlipDocument, type SalarySlipPayload } from "@/features/payroll/salary-slip-document";
+import { useAttendanceRefresh } from "@/lib/attendance-events";
 
 interface EarningsDay {
   workDate: string; scheduleName: string | null; isPaidLeave: boolean; isPaidHoliday: boolean;
@@ -83,6 +84,7 @@ export function PersonalEarningsWorkspace() {
     finally { setLoading(false); }
   }, [month]);
   useEffect(() => { void load(); }, [load]);
+  useAttendanceRefresh(() => { void load(); });
 
   const summary = data?.summary;
   const days = Array.isArray(data?.days) ? data.days : [];
