@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { ArrowRight, Building2, Eye, Pencil, Plus, Power, PowerOff, Search, ShieldCheck, Users } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/ui/Field";
@@ -46,8 +47,8 @@ export function DepartmentsWorkspace() {
   const canEdit = isOrganizationAdmin || user.permissions.includes("department.update");
   const canDeactivate = isOrganizationAdmin || user.permissions.includes("department.deactivate");
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true); setError("");
     try {
       const params = new URLSearchParams({ page: "1", limit: "100", includeInactive: "true" });
       if (query.trim()) params.set("q", query.trim());
@@ -55,9 +56,10 @@ export function DepartmentsWorkspace() {
       const result = await apiRequest<DepartmentResponse>(`/departments?${params.toString()}`);
       setRows(result.departments ?? []);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load departments."); }
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   }, [query, status]);
   useEffect(() => { void load(); }, [load]);
+  useSmartRefresh(() => load(true), !drawer && !statusTarget && !statusSaving && !detailLoading);
   useEffect(() => {
     let active = true;
     apiRequest<{ employees?: Manager[] }>("/employees?page=1&limit=100&status=ACTIVE&sortBy=name&sortOrder=asc")
@@ -99,7 +101,7 @@ export function DepartmentsWorkspace() {
     {notice ? <div className="info-callout" style={{ marginBottom: 14 }}>{notice}</div> : null}
     <Panel>
       <div className="toolbar"><div className="toolbar-left"><label className="search-field"><Search size={15} /><input aria-label="Search departments" placeholder="Search departments or managers…" value={query} onChange={(e) => setQuery(e.target.value)} /></label><select className="filter-select" aria-label="Filter department status" value={status} onChange={(e) => setStatus(e.target.value)}><option value="ALL">All departments</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select></div><span style={{ color: "var(--muted)", fontSize: 11 }}>{loading ? "Loading…" : `${rows.length} departments`}</span></div>
-      {error && !rows.length ? <div className="error-state"><div className="state-icon"><Building2 size={18} /></div><h3>Departments unavailable</h3><p>{error}</p><Button onClick={() => void load()}>Try again</Button></div> : null}
+      {error && !rows.length ? <div className="error-state"><div className="state-icon"><Building2 size={18} /></div><h3>Departments unavailable</h3><p>{error} This list will retry automatically.</p></div> : null}
       {loading && !rows.length ? <div style={{ padding: 18, display: "grid", gap: 12 }}>{[1,2,3,4].map((n) => <div key={n} className="skeleton" style={{ height: 54 }} />)}</div> : null}
       {!loading && !rows.length && !error ? <div className="empty-state"><div className="state-icon"><Building2 size={18} /></div><h3>{query ? "No departments found" : "No departments yet"}</h3><p>{query ? "Try a different search." : "Create your first department to establish a clear team structure."}</p>{canCreate ? <Button variant="primary" size="sm" leading={<Plus size={14} />} onClick={() => setDrawer("create")}>Create department</Button> : null}</div> : null}
       {rows.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Department</th><th>Manager</th><th>Team size</th><th>Manager eligibility</th><th>Status</th><th /></tr></thead><tbody>{rows.map((department) => <tr key={department.id}>

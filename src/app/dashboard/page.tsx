@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/Button";
 import { apiRequest, isRecord, numberValue, pickArray, stringValue } from "@/lib/api-client";
 import { formatNumber } from "@/lib/format";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 import { useSuperAdmin } from "@/components/super-admin/SuperAdminGate";
 
 interface Stats { [key: string]: unknown }
@@ -30,8 +31,8 @@ export default function SuperAdminDashboardPage() {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true); setError("");
     try {
       const [statsResult, orgResult] = await Promise.all([
         apiRequest<{ stats?: Stats }>("/dashboard/stats"),
@@ -40,9 +41,10 @@ export default function SuperAdminDashboardPage() {
       setStats(isRecord(statsResult.stats) ? statsResult.stats : {});
       setOrganizations(pickArray(orgResult, "organizations").map((row) => row as Organization));
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load platform overview."); }
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  useSmartRefresh(() => load(true));
 
   const metrics = [
     { label: "Organizations", value: stats ? numberValue(stats, "totalOrganizations") : null, note: `${formatNumber(numberValue(stats ?? {}, "activeOrganizations") ?? 0)} active`, icon: Building2 },
@@ -52,9 +54,9 @@ export default function SuperAdminDashboardPage() {
   ];
 
   return <>
-    <PageHeader eyebrow="Platform control" title="Platform overview" description="Monitor organizations, accounts, onboarding, and platform operations from one secure control center." action={<Button variant="secondary" busy={loading} leading={<Activity size={15}/>} onClick={() => void load()}>Refresh overview</Button>} />
+    <PageHeader eyebrow="Platform control" title="Platform overview" description="Monitor organizations, accounts, onboarding, and platform operations from one secure control center." />
     <div className="dashboard-intro" style={{ marginBottom: 18 }}><div><h2>Welcome back, {user.email.split("@")[0] || "Administrator"}.</h2><p>Here is the current view of your HRMS platform.</p></div><span className="date-chip">Platform administration</span></div>
-    {error ? <div className="form-error" role="alert">{error} <button type="button" className="button button-sm button-ghost" onClick={() => void load()}>Retry</button></div> : null}
+    {error ? <div className="form-error" role="alert">{error} The platform overview will retry automatically.</div> : null}
     <div className="page-grid grid-4" style={{ marginBottom: 18 }}>
       {metrics.map((metric) => { const Icon = metric.icon; return <Panel key={metric.label} className="metric-card"><div className="metric-label"><span>{metric.label}</span><span className="metric-icon"><Icon size={16}/></span></div><div className="metric-value">{loading ? <span className="skeleton" style={{ display: "inline-block", width: 70, height: 30 }}/> : metric.value === null ? "—" : formatNumber(metric.value)}</div><div className="metric-foot">{metric.note}</div></Panel>; })}
     </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { CalendarDays, CheckCircle2, Clock3, Plus, RefreshCw, Trash2, XCircle } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3, Plus, Trash2, XCircle } from "lucide-react";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest } from "@/lib/api-client";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 import { formatDate, humanize } from "@/lib/format";
 
 interface LeaveRequest { id: string; employeeId: string; employeeCode?: string; firstName?: string; lastName?: string; departmentName?: string; leaveType: string; startDate: string; endDate: string; isPaid: boolean; reason: string; status: string; reviewerNote?: string | null; isOwnRequest?: boolean; createdAt?: string }
@@ -35,8 +36,8 @@ export function LeaveWorkspace() {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true); setError("");
     const [requestResult, holidayResult] = await Promise.allSettled([
       apiRequest<{ requests?: LeaveRequest[] }>("/leave/requests"),
       apiRequest<{ holidays?: Holiday[]; canManage?: boolean }>("/leave/holidays"),
@@ -47,9 +48,10 @@ export function LeaveWorkspace() {
     if (holidayResult.status === "fulfilled") { setHolidays(holidayResult.value.holidays ?? []); setCanManageHolidays(Boolean(holidayResult.value.canManage)); }
     else errors.push(holidayResult.reason instanceof Error ? holidayResult.reason.message : "Unable to load public holidays.");
     setError(errors.join(" · "));
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, []);
   useEffect(() => { void load(); }, [load]);
+  useSmartRefresh(() => load(true), !requestOpen && !holidayOpen && !decisionTarget && !holidayToRemove && !saving);
 
   const visibleRequests = useMemo(() => requests.filter((item) => {
     const needle = search.trim().toLowerCase();
@@ -102,7 +104,7 @@ export function LeaveWorkspace() {
   }
 
   return <>
-    <PageHeader eyebrow="Time off" title="Leave & holidays" description="Keep leave requests, review decisions, and organization holidays in one clear view." action={<div style={{ display:"flex", gap:8 }}>{user.role !== "ORGANIZATION_ADMIN" ? <Button variant="primary" leading={<Plus size={14} />} onClick={() => setRequestOpen(true)}>Request leave</Button> : null}{canManageHolidays ? <Button variant="secondary" leading={<Plus size={14} />} onClick={() => setHolidayOpen(true)}>Add holiday</Button> : null}<Button variant="secondary" leading={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>Refresh</Button></div>} />
+    <PageHeader eyebrow="Time off" title="Leave & holidays" description="Keep leave requests, review decisions, and organization holidays in one clear view." action={<div style={{ display:"flex", gap:8 }}>{user.role !== "ORGANIZATION_ADMIN" ? <Button variant="primary" leading={<Plus size={14} />} onClick={() => setRequestOpen(true)}>Request leave</Button> : null}{canManageHolidays ? <Button variant="secondary" leading={<Plus size={14} />} onClick={() => setHolidayOpen(true)}>Add holiday</Button> : null}</div>} />
     {notice ? <div role="status" className="success-callout" style={{ marginBottom: 13 }}><CheckCircle2 size={15} />{notice}</div> : null}
     {error ? <div role="alert" className="form-error" style={{ marginBottom: 13 }}>{error}</div> : null}
     <Panel>
