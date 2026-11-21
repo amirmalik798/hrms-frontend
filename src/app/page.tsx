@@ -42,13 +42,16 @@ export default function LoginPage() {
         body: JSON.stringify({ email: email.trim(), password }),
       });
       const destinations: Record<string, string> = {
-        SUPER_ADMIN: "/dashboard",
         ORGANIZATION_ADMIN: "/org/dashboard",
         HR_MANAGER: "/hr/dashboard",
         DEPARTMENT_MANAGER: "/dm/dashboard",
         EMPLOYEE: "/employee/dashboard",
       };
-      const destination = result.user?.role ? destinations[result.user.role] : undefined;
+      const role = result.user?.role;
+      if (role === "SUPER_ADMIN") {
+        throw new Error("The Super Admin workspace is being moved to the dedicated platform frontend. Your sign-in was successful, but this frontend no longer hosts the Super Admin workspace.");
+      }
+      const destination = role ? destinations[role] : undefined;
       const safeDestination = destination ?? (typeof result.destination === "string" && result.destination.startsWith("/") ? result.destination : undefined);
       if (!safeDestination) throw new Error(result.message || "The server did not provide a valid workspace destination.");
       router.replace(safeDestination);
