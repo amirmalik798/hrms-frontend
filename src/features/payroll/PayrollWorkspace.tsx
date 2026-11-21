@@ -275,6 +275,7 @@ export function PayrollWorkspace() {
   // the data for a newer selection.
   useEffect(() => {
     if (!slipTarget) return;
+    const target = slipTarget;
     let active = true;
     setSlipLoading(true);
     setSlipError("");
@@ -284,9 +285,9 @@ export function PayrollWorkspace() {
       try {
         const count = validatePayslipRange(slipStartMonth, slipEndMonth, currentOrganizationMonth);
         const params = new URLSearchParams({ startMonth: slipStartMonth, endMonth: slipEndMonth });
-        const result = await apiRequest<SalarySlipPayload>(`/payroll/payslips/${encodeURIComponent(slipTarget.employeeId)}?${params.toString()}`);
+        const result = await apiRequest<SalarySlipPayload>(`/payroll/payslips/${encodeURIComponent(target.employeeId)}?${params.toString()}`);
         if (!active) return;
-        if (!result.employee || result.employee.id !== slipTarget.employeeId || result.startMonth !== slipStartMonth || result.endMonth !== slipEndMonth || !Array.isArray(result.months) || result.months.length !== count) {
+        if (!result.employee || result.employee.id !== target.employeeId || result.startMonth !== slipStartMonth || result.endMonth !== slipEndMonth || !Array.isArray(result.months) || result.months.length !== count) {
           throw new Error("The individual salary-slip response was incomplete or did not match the selected month range.");
         }
         assertSalarySlipUsesOrganizationCurrency(result, organizationCurrencyCode);
@@ -314,7 +315,7 @@ export function PayrollWorkspace() {
     setSlipPrinting(true); setSlipError("");
     try {
       const params = new URLSearchParams({ startMonth: slipStartMonth, endMonth: slipEndMonth });
-      const latest = await apiRequest<SalarySlipPayload>(`/payroll/payslips/${encodeURIComponent(slipTarget.employeeId)}?${params.toString()}`);
+      const latest = await apiRequest<SalarySlipPayload>(`/payroll/payslips/${encodeURIComponent(target.employeeId)}?${params.toString()}`);
       const count = monthOrdinal(slipEndMonth) - monthOrdinal(slipStartMonth) + 1;
       if (!latest.employee || latest.employee.id !== slipTarget.employeeId || latest.startMonth !== slipStartMonth || latest.endMonth !== slipEndMonth || !Array.isArray(latest.months) || latest.months.length !== count) throw new Error("The latest salary-slip data was incomplete. Adjust the selected month range and try again.");
       assertSalarySlipUsesOrganizationCurrency(latest, organizationCurrencyCode);
