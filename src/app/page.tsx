@@ -42,18 +42,26 @@ export default function LoginPage() {
         body: JSON.stringify({ email: email.trim(), password }),
       });
       const destinations: Record<string, string> = {
+        SUPER_ADMIN: "/dashboard",
         ORGANIZATION_ADMIN: "/org/dashboard",
         HR_MANAGER: "/hr/dashboard",
         DEPARTMENT_MANAGER: "/dm/dashboard",
         EMPLOYEE: "/employee/dashboard",
       };
       const role = result.user?.role;
-      if (role === "SUPER_ADMIN") {
-        throw new Error("The Super Admin workspace is being moved to the dedicated platform frontend. Your sign-in was successful, but this frontend no longer hosts the Super Admin workspace.");
-      }
       const destination = role ? destinations[role] : undefined;
       const safeDestination = destination ?? (typeof result.destination === "string" && result.destination.startsWith("/") ? result.destination : undefined);
       if (!safeDestination) throw new Error(result.message || "The server did not provide a valid workspace destination.");
+
+      if (role === "SUPER_ADMIN") {
+        if (result.destination !== "/dashboard") {
+          throw new Error("The server did not provide a valid Super Admin workspace destination.");
+        }
+        const session = await apiRequest<{ authenticated?: boolean; user?: { role?: string } }>("/auth/me");
+        if (session.authenticated !== true || session.user?.role !== "SUPER_ADMIN") {
+          throw new Error("Session verification failed. Please sign in again.");
+        }
+      }
       router.replace(safeDestination);
       router.refresh();
     } catch (caught) {
