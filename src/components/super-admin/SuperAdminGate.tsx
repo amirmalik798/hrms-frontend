@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { usePathname, useRouter } from "next/navigation";
 import { Activity, AlertCircle, Building2, ChevronDown, ChevronsLeft, ChevronsRight, CreditCard, FileText, HeartHandshake, LayoutDashboard, LoaderCircle, LogOut, Mail, Menu, Moon, Search, ShieldCheck, Sun, Users, X } from "lucide-react";
 import { apiRequest, ApiError } from "@/lib/api-client";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 
 interface SuperAdminUser { email: string; role: "SUPER_ADMIN" }
 interface SuperAdminContextValue { user: SuperAdminUser }
@@ -63,6 +64,7 @@ export function SuperAdminGate({ children }: { children: ReactNode }) {
   }, [router]);
 
   useEffect(() => { void verifySession(); }, [verifySession]);
+  useSmartRefresh(() => { if (error && !user) return verifySession(); }, Boolean(error && !user));
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("hrms-super-admin-theme");
@@ -103,7 +105,7 @@ export function SuperAdminGate({ children }: { children: ReactNode }) {
   const filtered = allItems.filter((item) => `${item.label} ${item.href}`.toLowerCase().includes(commandQuery.toLowerCase()));
   const active = allItems.find((item) => item.href === pathname || (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`))) ?? allItems[0];
   if (checking && !user) return <LoadingScreen label="Verifying your platform administrator session…" />;
-  if (error && !user) return <main className="error-state" style={{ minHeight: "100vh", display: "grid", alignContent: "center", justifyContent: "center" }}><div className="state-icon"><AlertCircle size={20}/></div><h3>Platform workspace unavailable</h3><p>{error}</p><button className="button button-secondary" onClick={() => void verifySession()}>Try again</button></main>;
+  if (error && !user) return <main className="error-state" style={{ minHeight: "100vh", display: "grid", alignContent: "center", justifyContent: "center" }}><div className="state-icon"><AlertCircle size={20}/></div><h3>Platform workspace unavailable</h3><p>{error} Access verification will retry automatically.</p></main>;
   if (!user) return <LoadingScreen label="Opening platform workspace…" />;
 
   return <SuperAdminContext.Provider value={{ user }}>

@@ -10,6 +10,7 @@ import { Panel, PanelHeading } from "@/components/ui/Panel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { apiRequest } from "@/lib/api-client";
 import { OrganizationBrandingWorkspace } from "@/features/settings/OrganizationBrandingWorkspace";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 
 type Settings = {
   timeZone: string; locale: string; currencyCode: string; dateFormat: string;
@@ -32,20 +33,23 @@ export function OrganizationSettingsWorkspace() {
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [dirty, setDirty] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true); setError("");
     try {
       const result = await apiRequest<Response>("/org/settings");
       setSettings({ ...defaultSettings, ...(result.settings ?? {}), workingDays: Array.isArray(result.settings?.workingDays) ? result.settings.workingDays : defaultSettings.workingDays, legalEntityName: result.settings?.legalEntityName ?? "", legalEntityCountryCode: result.settings?.legalEntityCountryCode ?? result.settings?.countryCode ?? "RW" });
       setOrganization({ name: result.organization?.name ?? user.organizationName, slug: result.organization?.slug ?? "", contactEmail: result.organization?.contactEmail ?? "", contactPhone: result.organization?.contactPhone ?? "", address: result.organization?.address ?? "", country: result.organization?.country ?? "" });
+      setDirty(false);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load organization settings."); }
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   }, [user.organizationName]);
   useEffect(() => { void load(); }, [load]);
+  useSmartRefresh(() => load(true), !dirty && !saving && !completing);
 
-  function update<K extends keyof Settings>(key: K, value: Settings[K]) { setSettings((current) => ({ ...current, [key]: value })); }
-  function toggleDay(value: number) { setSettings((current) => ({ ...current, workingDays: current.workingDays.includes(value) ? current.workingDays.filter((day) => day !== value) : [...current.workingDays, value].sort((a,b) => a-b) })); }
+  function update<K extends keyof Settings>(key: K, value: Settings[K]) { setDirty(true); setSettings((current) => ({ ...current, [key]: value })); }
+  function toggleDay(value: number) { setDirty(true); setSettings((current) => ({ ...current, workingDays: current.workingDays.includes(value) ? current.workingDays.filter((day) => day !== value) : [...current.workingDays, value].sort((a,b) => a-b) })); }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setError(""); setNotice("");
@@ -59,6 +63,7 @@ export function OrganizationSettingsWorkspace() {
       }) });
       setNotice("Organization settings saved.");
       await refreshSession();
+      setDirty(false);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to save organization settings."); }
     finally { setSaving(false); }
   }

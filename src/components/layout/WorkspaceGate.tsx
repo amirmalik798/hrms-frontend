@@ -2,11 +2,12 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { AlertCircle, LoaderCircle, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertCircle, LoaderCircle, ShieldCheck } from "lucide-react";
 import { apiRequest, ApiError } from "@/lib/api-client";
 import type { WorkspaceRole, WorkspaceSessionPayload, WorkspaceUser } from "@/types/workspace";
 import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
 import { roleLabels } from "@/lib/workspace-config";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 
 interface WorkspaceContextValue {
   user: WorkspaceUser;
@@ -158,6 +159,19 @@ export function WorkspaceGate({ role, children }: { role: WorkspaceRole; childre
   }, [role, router]);
 
   useEffect(() => { void refreshSession(); }, [refreshSession]);
+  useSmartRefresh(async () => {
+    if (error && !user) { await refreshSession(); return; }
+    if (licenseCheckError) {
+      try {
+        const access = await apiRequest<{ license?: { canAccess?: boolean }; setupCompleted?: boolean }>("/license-access");
+        setLicenseDenied(access.license?.canAccess !== true);
+        setSetupCompleted(access.setupCompleted !== false);
+        setLicenseCheckError("");
+      } catch (caught) {
+        setLicenseCheckError(caught instanceof Error ? caught.message : "Unable to verify your organization license.");
+      }
+    }
+  }, Boolean((error && !user) || licenseCheckError));
 
   useEffect(() => {
     if (!user) return;
@@ -175,14 +189,14 @@ export function WorkspaceGate({ role, children }: { role: WorkspaceRole; childre
   if (checking && !user) return <Loading message="Verifying your secure workspace…" />;
   if (error && !user) {
     return <main className="error-state" style={{ minHeight: "100vh", display: "grid", alignContent: "center", justifyContent: "center" }}>
-      <div className="state-icon"><AlertCircle size={20} /></div><h3>Workspace unavailable</h3><p>{error}</p><button className="button button-secondary" style={{ marginTop: 16 }} onClick={() => void refreshSession()}><RefreshCw size={14} /> Try again</button>
+      <div className="state-icon"><AlertCircle size={20} /></div><h3>Workspace unavailable</h3><p>{error}</p>
     </main>;
   }
   if (!context) return <Loading message="Opening your workspace…" />;
-  if (licenseCheckError && !(role === "ORGANIZATION_ADMIN" && pathname === "/org/license")) return <main className="error-state" style={{ minHeight: "100vh", display: "grid", alignContent: "center", justifyContent: "center" }}><div className="state-icon"><ShieldCheck size={20} /></div><h3>License status could not be verified</h3><p>{licenseCheckError}. Workspace access remains unavailable until the license status can be checked.</p><button className="button button-secondary" style={{ marginTop: 16 }} onClick={() => void refreshSession()}><RefreshCw size={14} /> Try again</button></main>;
+  if (licenseCheckError && !(role === "ORGANIZATION_ADMIN" && pathname === "/org/license")) return <main className="error-state" style={{ minHeight: "100vh", display: "grid", alignContent: "center", justifyContent: "center" }}><div className="state-icon"><ShieldCheck size={20} /></div><h3>License status could not be verified</h3><p>{licenseCheckError}. Workspace access remains unavailable until the license status can be checked.</p></main>;
   if (licenseDenied && role !== "ORGANIZATION_ADMIN") {
     return <main className="error-state" style={{ minHeight: "100vh", display: "grid", alignContent: "center", justifyContent: "center" }}>
-      <div className="state-icon"><ShieldCheck size={20} /></div><h3>Workspace access is restricted</h3><p>Your organization’s HRMS license is not currently active. Contact your Organization Admin for assistance.</p><button className="button button-secondary" style={{ marginTop: 16 }} onClick={() => void refreshSession()}><RefreshCw size={14} /> Check access again</button>
+      <div className="state-icon"><ShieldCheck size={20} /></div><h3>Workspace access is restricted</h3><p>Your organization’s HRMS license is not currently active. Contact your Organization Admin for assistance.</p>
     </main>;
   }
   return <WorkspaceContext.Provider value={context}><WorkspaceShell>{children}</WorkspaceShell></WorkspaceContext.Provider>;
