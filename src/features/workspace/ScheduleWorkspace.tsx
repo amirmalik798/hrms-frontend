@@ -24,7 +24,7 @@ const defaultDays = (): ScheduleDay[] => weekdays.slice(0, 5).map((day) => ({ da
 function SearchIcon() { return <span aria-hidden="true">⌕</span>; }
 
 function formatShiftTime(value: string) {
-  const match = /^(\\d{1,2}):(\\d{2})(?::\\d{2})?$/.exec(value || "");
+  const match = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(value || "");
   if (!match) return value || "—";
   const hour = Number(match[1]);
   const minute = Number(match[2]);
