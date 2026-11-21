@@ -289,7 +289,7 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
                 variant={selectedPreset === preset.key ? "primary" : "secondary"}
                 aria-pressed={selectedPreset === preset.key}
                 disabled={!rangeReady}
-                onClick={() => { setSelectedPreset(preset.key); applyAttendancePreset(preset.days, preset.months); }}
+                onClick={() => { setSelectedPreset(preset.key); applyAttendancePreset("days" in preset ? preset.days : undefined, "months" in preset ? preset.months : undefined); }}
               >
                 {preset.label}
               </Button>
