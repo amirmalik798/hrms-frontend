@@ -128,7 +128,28 @@ export function DepartmentsWorkspace() {
       </tr>)}</tbody></table></div> : null}
     </Panel>
     <Drawer open={Boolean(statusTarget)} title={statusTarget?.status === "ACTIVE" ? "Deactivate department?" : "Activate department?"} description={statusTarget?.status === "ACTIVE" ? "Deactivation also marks currently active workforce members assigned to this department as INACTIVE and deactivates their linked accounts. Former employees are not changed." : "The department will become available for use again. Workforce members who were deactivated with the department will not be automatically reactivated."} onClose={() => { if (!statusSaving) setStatusTarget(null); }} width="standard" footer={<><Button variant="secondary" disabled={statusSaving} onClick={() => setStatusTarget(null)}>Cancel</Button><Button variant={statusTarget?.status === "ACTIVE" ? "danger" : "primary"} busy={statusSaving} onClick={() => void confirmDepartmentStatusChange()}>{statusTarget?.status === "ACTIVE" ? "Confirm deactivation" : "Confirm activation"}</Button></>}>
-      {statusTarget ? <div className="form-section"><div className="detail-list"><div><span>Department</span><strong>{statusTarget.name}</strong></div><div><span>Current status</span><strong>{humanize(statusTarget.status)}</strong></div><div><span>Currently active members</span><strong>{formatNumber(statusTarget.active_employee_count ?? 0)}</strong></div></div>{statusTarget.status === "ACTIVE" ? <p className="form-note"><ShieldCheck size={15} /> The backend performs the workforce/account synchronization and audit logging in the same transaction.</p> : null}</div> : null}
+      {statusTarget ? <div className="form-section">
+        <section className="department-status-summary" aria-label="Department activation summary">
+          <div className="department-status-summary-heading">
+            <span className="department-status-summary-icon"><Building2 size={18} /></span>
+            <div>
+              <span>Department</span>
+              <strong>{statusTarget.name}</strong>
+            </div>
+          </div>
+          <div className="department-status-summary-meta">
+            <div>
+              <span>Current status</span>
+              <StatusBadge value={statusTarget.status} />
+            </div>
+            <div>
+              <span>Currently active members</span>
+              <strong>{formatNumber(statusTarget.active_employee_count ?? 0)}</strong>
+            </div>
+          </div>
+        </section>
+        {statusTarget.status === "ACTIVE" ? <p className="form-note"><ShieldCheck size={15} /> The backend performs the workforce/account synchronization and audit logging in the same transaction.</p> : null}
+      </div> : null}
     </Drawer>
     <DepartmentDrawer open={drawer === "create" || drawer === "edit"} mode={drawer === "edit" ? "edit" : "create"} department={selected} loading={detailLoading} managers={managers} managerOptionsError={managerOptionsError} canDeactivate={canDeactivate} onClose={() => setDrawer(null)} onSaved={() => { setDrawer(null); setNotice("Department saved successfully."); void load(); setTimeout(() => setNotice(""), 4000); }} />
     <DepartmentDetailsDrawer open={drawer === "details"} department={selected} loading={detailLoading} error={error} canEdit={canEdit} onClose={() => { setDrawer(null); setError(""); }} onEdit={() => { if (selected) void openDepartment(selected.id, "edit"); }} />
