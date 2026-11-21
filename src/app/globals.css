@@ -541,55 +541,6 @@ body { font-size: 15px; line-height: 1.55; }
   margin-top: 12px;
 }
 
-/* The platform console preserves the Super Admin dark/light preference without
-   changing the theme used by the organization workspaces. */
-:root[data-super-admin-theme="dark"] {
-  color-scheme: dark;
-  --bg: #0b1421;
-  --surface: #111d2c;
-  --surface-muted: #152337;
-  --surface-hover: #1a2b41;
-  --text: #dce7f3;
-  --text-strong: #f7faff;
-  --muted: #9aadc4;
-  --subtle: #6f849e;
-  --border: #25384f;
-  --border-strong: #354d69;
-  --accent: #75c7ff;
-  --accent-strong: #a9ddff;
-  --accent-soft: #18334c;
-  --success: #55d6a1;
-  --warning: #f5c66c;
-  --danger: #fb8595;
-  --shadow: 0 14px 40px rgba(0,0,0,.28);
-  --sidebar: #0e1928;
-}
-:root[data-super-admin-theme="light"] {
-  color-scheme: light;
-  --bg: #f2f5f9;
-  --surface: #ffffff;
-  --surface-muted: #f7f9fc;
-  --surface-hover: #eef3f8;
-  --text: #203149;
-  --text-strong: #112238;
-  --muted: #61748c;
-  --subtle: #8b9bb0;
-  --border: #dfe7f0;
-  --border-strong: #ccd8e6;
-  --accent: #247bb8;
-  --accent-strong: #145d91;
-  --accent-soft: #e7f3fc;
-  --sidebar: #f8fbff;
-}
-:root[data-super-admin-theme] body { background: var(--bg); color: var(--text); }
-.super-admin-app-dark .sidebar, .super-admin-app-light .sidebar { background: var(--sidebar); }
-@media (max-width: 900px) {
-  .super-admin-app-dark .sidebar, .super-admin-app-light .sidebar { transform: translateX(-100%); }
-  .super-admin-app-dark .sidebar-mobile-open, .super-admin-app-light .sidebar-mobile-open { transform: translateX(0); }
-  .super-admin-app-dark .main-region, .super-admin-app-light .main-region,
-  .super-admin-app-dark .main-region-expanded, .super-admin-app-light .main-region-expanded { margin-left: 0; }
-}
-
 /* Shared organization-time clock. Its next-action pill follows the source
    workspace convention: green signals the next clock-in; rose signals clock-out. */
 .workspace-clock { display: inline-flex; min-width: 0; align-items: center; gap: 9px; padding: 5px 9px; border: 1px solid var(--border); border-radius: 11px; background: color-mix(in srgb, var(--surface-muted) 78%, transparent); color: var(--text-strong); text-align: left; }
