@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { apiRequest, isRecord, pickArray, stringValue, numberValue } from "@/lib/api-client";
 import { formatDate, formatNumber, humanize } from "@/lib/format";
 import { roleLabels } from "@/lib/workspace-config";
+import { notifyAttendanceStatusChanged, useAttendanceRefresh } from "@/lib/attendance-events";
 import type { WorkspaceRole } from "@/types/workspace";
 
 interface DashboardData {
@@ -61,6 +62,7 @@ export function WorkspaceDashboard({ role }: { role: WorkspaceRole }) {
   }, [role]);
 
   useEffect(() => { void load(); }, [load]);
+  useAttendanceRefresh(() => { void load(); });
 
   const stats = data?.stats ?? {};
   const team = data?.team ?? {};
@@ -154,7 +156,7 @@ function EmployeeHomeContent({ clockStatus, events }: { clockStatus?: string; ev
       const nextAction = status === "CLOCKED_IN" ? "CLOCK_OUT" : "CLOCK_IN";
       const result = await apiRequest<{ clockStatus?: string }>("/attendance/events", { method: "POST", body: JSON.stringify({ action: nextAction }) });
       setStatus(result.clockStatus ?? (nextAction === "CLOCK_IN" ? "CLOCKED_IN" : "CLOCKED_OUT"));
-      window.dispatchEvent(new Event("hrms:attendance-status-changed"));
+      notifyAttendanceStatusChanged();
     } catch (caught) { setError(caught instanceof Error ? caught.message : "The attendance action could not be completed."); }
     finally { setSaving(false); }
   }
