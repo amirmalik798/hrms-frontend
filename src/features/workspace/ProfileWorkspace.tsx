@@ -12,6 +12,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { apiRequest } from "@/lib/api-client";
 import { humanize, formatDate } from "@/lib/format";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 
 interface ProfileRecord {
   id?: string;
@@ -38,8 +39,8 @@ export function ProfileWorkspace() {
   const canEdit = isAdmin || user.role === "DEPARTMENT_MANAGER" || user.permissions.includes("employee.self.update") || (user.role === "HR_MANAGER" && user.permissions.includes("employee.update"));
   const canEditEmergency = isAdmin || user.role === "DEPARTMENT_MANAGER" || user.permissions.includes("employee.self.update") || (user.role === "HR_MANAGER" && user.permissions.includes("employee.update"));
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true); setError("");
     try {
       let record: ProfileRecord;
       if (isAdmin) {
@@ -62,10 +63,11 @@ export function ProfileWorkspace() {
         emergencyPhone: record.emergency_contact_phone || "",
       });
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load your profile."); }
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   }, [isAdmin, user.role, user.employeeId]);
 
   useEffect(() => { void load(); }, [load]);
+  useSmartRefresh(() => load(true), !drawerOpen && !saving && !photoUploading);
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setError(""); setNotice("");

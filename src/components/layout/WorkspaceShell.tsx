@@ -9,6 +9,7 @@ import { workspaceNavigation, roleLabels, type NavItem } from "@/lib/workspace-c
 import { apiRequest, pickArray, stringValue } from "@/lib/api-client";
 import { OrganizationMark } from "@/components/layout/OrganizationMark";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 import { WorkspaceClock } from "@/components/layout/WorkspaceClock";
 import type { WorkspaceRole } from "@/types/workspace";
 
@@ -52,6 +53,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     } catch { /* Notifications are supplemental; the page remains usable. */ }
   }, []);
   useEffect(() => { void loadAlerts(); }, [loadAlerts]);
+  useSmartRefresh(loadAlerts);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

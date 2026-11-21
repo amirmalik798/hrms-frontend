@@ -8,6 +8,7 @@ import { Panel } from "@/components/ui/Panel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { apiRequest, pickArray, stringValue } from "@/lib/api-client";
 import { formatDate, humanize } from "@/lib/format";
+import { useSmartRefresh } from "@/lib/smart-refresh";
 import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 
 interface Conversation { id: string; subject: string; lastMessageAt: string; otherUserId: string; otherName: string; otherRole: string; lastMessage: string; unreadCount: number; otherEmployeeId?: string | null }
@@ -67,10 +68,10 @@ export function MessagesWorkspace() {
 
   useEffect(() => { void loadInbox(); }, [loadInbox]);
   useEffect(() => { if (selectedId) void loadThread(selectedId); else setMessages([]); }, [selectedId, loadThread]);
-  useEffect(() => {
-    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void loadInbox(true); }, 15000);
-    return () => window.clearInterval(timer);
-  }, [loadInbox]);
+  useSmartRefresh(() => {
+    void loadInbox(true);
+    if (selectedId) void loadThread(selectedId, true);
+  }, !compose && !sending);
 
   async function sendNew(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSending(true); setError(""); setNotice("");
@@ -95,7 +96,7 @@ export function MessagesWorkspace() {
   const selected = conversations.find((conversation) => conversation.id === selectedId);
   const unread = conversations.reduce((count, conversation) => count + (conversation.unreadCount || 0), 0);
   return <>
-    <PageHeader eyebrow="Communication" title="Messages" description="Private conversations with the people in your reporting line." action={<Button variant="secondary" leading={<Bell size={14} />} onClick={() => void loadInbox()} busy={loading}>{unread} unread</Button>} />
+    <PageHeader eyebrow="Communication" title="Messages" description="Private conversations with the people in your reporting line." action={<span className="date-chip"><Bell size={14} /> {unread} unread</span>} />
     {error ? <div className="form-error" role="alert" style={{ marginBottom: 12 }}>{error}</div> : null}
     {notice ? <div className="info-callout" style={{ marginBottom: 12 }}><Check size={15} />{notice}</div> : null}
     <Panel style={{ overflow: "hidden" }}>
