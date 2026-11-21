@@ -31,7 +31,9 @@ interface Employee {
   manager_id: string | null;
   manager_name: string | null;
   joining_date: string;
+  invitation_id?: string | null;
   invitation_status?: string | null;
+  has_pending_invitation?: boolean;
   emergency_contact_name?: string | null;
   emergency_contact_relationship?: string | null;
   emergency_contact_phone?: string | null;
@@ -111,7 +113,17 @@ export function WorkforceWorkspace() {
     setDrawerMode(mode); setSelectedId(id); setDetailLoading(true); setSelected(null); setError("");
     try {
       const result = await apiRequest<{ employee?: Employee }>(`/employees/${id}`);
-      setSelected(result.employee ?? null);
+      const directoryRecord = rows.find((employee) => employee.id === id);
+      if (!result.employee) {
+        setSelected(null);
+      } else {
+        setSelected({
+          ...result.employee,
+          invitation_id: result.employee.invitation_id ?? directoryRecord?.invitation_id,
+          invitation_status: result.employee.invitation_status ?? directoryRecord?.invitation_status,
+          has_pending_invitation: result.employee.has_pending_invitation ?? directoryRecord?.has_pending_invitation,
+        });
+      }
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load this employee."); }
     finally { setDetailLoading(false); }
   }
@@ -269,8 +281,9 @@ function EmployeeDetailsDrawer({ open, employee, loading, error, canInvite, onCl
   const [inviteError, setInviteError] = useState("");
   const { user } = useWorkspace();
   const name = employee ? `${employee.first_name} ${employee.last_name}`.trim() : "Workforce member";
-  const invitationStatus = (employee?.invitation_status || "").toUpperCase();
-  const inviteEligible = Boolean(employee && employee.employment_status !== "FORMER" && !["PENDING", "ACCEPTED"].includes(invitationStatus));
+  const invitationStatus = (employee?.invitation_status || (employee?.invitation_id === null ? "NOT_SENT" : "")).toUpperCase();
+  const invitationStatusKnown = Boolean(invitationStatus);
+  const inviteEligible = Boolean(employee && invitationStatusKnown && employee.employment_status !== "FORMER" && !["PENDING", "ACCEPTED"].includes(invitationStatus));
   async function sendInvitation() {
     if (!employee) return;
     setInviting(true); setInviteError("");
@@ -285,7 +298,7 @@ function EmployeeDetailsDrawer({ open, employee, loading, error, canInvite, onCl
     {inviteError ? <div className="form-error" role="alert">{inviteError}</div> : null}
     {loading ? <div className="loading-state">Loading profile details…</div> : error ? <div className="error-state"><h3>Details unavailable</h3><p>{error}</p></div> : employee ? <>
       <div style={{ display: "flex", alignItems: "center", gap: 13, marginBottom: 24 }}><ProfilePhoto name={name} employeeId={employee.id} className="user-avatar" /><div><h3 style={{ fontSize: 17, margin: 0, color: "var(--text-strong)" }}>{name}</h3><p style={{ color: "var(--muted)", fontSize: 11, margin: "3px 0 0" }}>{employee.employee_code} · {roleDisplay[employee.workforce_role] ?? humanize(employee.workforce_role)}</p></div></div>
-      <div className="form-grid" style={{ marginBottom: 20 }}><Detail label="Employment status"><StatusBadge value={employee.employment_status} /></Detail><Detail label="Invitation status"><StatusBadge value={employee.invitation_status ?? "NOT_SENT"} /></Detail></div>
+      <div className="form-grid" style={{ marginBottom: 20 }}><Detail label="Employment status"><StatusBadge value={employee.employment_status} /></Detail><Detail label="Invitation status"><StatusBadge value={invitationStatus || "UNKNOWN"} label={invitationStatusKnown ? undefined : "Unavailable"} /></Detail></div>
       <DetailSection title="Work information"><Detail label="Job title" value={employee.designation} /><Detail label="Department" value={employee.department_name || "Not assigned"} /><Detail label="Joining date" value={formatDate(employee.joining_date)} /></DetailSection>{employee.manager_name ? <section className="form-section"><h3 className="form-section-title">Reporting manager</h3><div style={{ display: "flex", alignItems: "center", gap: 10 }}><ProfilePhoto name={employee.manager_name} employeeId={employee.manager_id} currentUser={Boolean(employee.manager_id && employee.manager_id === user.employeeId)} /><strong style={{ color: "var(--text-strong)", fontSize: 12 }}>{employee.manager_name}</strong></div></section> : null}
       <DetailSection title="Contact details"><Detail label="Email" value={employee.email} /><Detail label="Phone" value={employee.phone} /><Detail label="Location" value={[employee.city, employee.country].filter(Boolean).join(", ")} /></DetailSection>
       {employee.emergency_contact_name || employee.emergency_contact_phone ? <DetailSection title="Emergency contact"><Detail label="Name" value={employee.emergency_contact_name} /><Detail label="Relationship" value={employee.emergency_contact_relationship} /><Detail label="Phone" value={employee.emergency_contact_phone} /></DetailSection> : null}
