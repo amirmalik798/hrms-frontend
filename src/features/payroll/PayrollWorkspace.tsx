@@ -75,23 +75,23 @@ export function PayrollWorkspace() {
   const [slipError, setSlipError] = useState("");
   const loadRequestId = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return;
     const requestId = ++loadRequestId.current;
-    setLoading(true); setError("");
+    if (!silent) setLoading(true); setError("");
     try {
       const result = await apiRequest<PaymentPayload>(`/payroll/payments?month=${month}`);
       if (requestId === loadRequestId.current) setPayments(Array.isArray(result.payments) ? result.payments : []);
     } catch (caught) {
       if (requestId === loadRequestId.current) setError(caught instanceof Error ? caught.message : "Unable to load salary payment records.");
     } finally {
-      if (requestId === loadRequestId.current) setLoading(false);
+      if (requestId === loadRequestId.current && !silent) setLoading(false);
     }
   }, [month]);
   useEffect(() => { if (workDate && !monthTouchedByUser) setMonth(workDate.slice(0, 7)); }, [workDate, monthTouchedByUser]);
   useEffect(() => { void load(); }, [load]);
-  useSmartRefresh(() => load(), !selected && !slipTarget && !bulkOpen && !saving && !bulkBusy && !slipLoading && !slipPrinting);
-  useAttendanceRefresh(() => { void load(); });
+  useSmartRefresh(() => load(true), !selected && !slipTarget && !bulkOpen && !saving && !bulkBusy && !slipLoading && !slipPrinting);
+  useAttendanceRefresh(() => { void load(true); });
 
   const visible = payments.filter((item) => {
     const needle = search.trim().toLowerCase();

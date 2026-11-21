@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { AlertCircle, Building2, CalendarDays, CheckCircle2, Clock3, Globe2, Save, ShieldCheck } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useWorkspace } from "@/components/layout/WorkspaceGate";
@@ -34,22 +34,24 @@ export function OrganizationSettingsWorkspace() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [dirty, setDirty] = useState(false);
+  const dirtyRef = useRef(false);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true); setError("");
     try {
       const result = await apiRequest<Response>("/org/settings");
+      if (silent && dirtyRef.current) return;
       setSettings({ ...defaultSettings, ...(result.settings ?? {}), workingDays: Array.isArray(result.settings?.workingDays) ? result.settings.workingDays : defaultSettings.workingDays, legalEntityName: result.settings?.legalEntityName ?? "", legalEntityCountryCode: result.settings?.legalEntityCountryCode ?? result.settings?.countryCode ?? "RW" });
       setOrganization({ name: result.organization?.name ?? user.organizationName, slug: result.organization?.slug ?? "", contactEmail: result.organization?.contactEmail ?? "", contactPhone: result.organization?.contactPhone ?? "", address: result.organization?.address ?? "", country: result.organization?.country ?? "" });
-      setDirty(false);
+      setDirty(false); dirtyRef.current = false;
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load organization settings."); }
     finally { if (!silent) setLoading(false); }
   }, [user.organizationName]);
   useEffect(() => { void load(); }, [load]);
   useSmartRefresh(() => load(true), !dirty && !saving && !completing);
 
-  function update<K extends keyof Settings>(key: K, value: Settings[K]) { setDirty(true); setSettings((current) => ({ ...current, [key]: value })); }
-  function toggleDay(value: number) { setDirty(true); setSettings((current) => ({ ...current, workingDays: current.workingDays.includes(value) ? current.workingDays.filter((day) => day !== value) : [...current.workingDays, value].sort((a,b) => a-b) })); }
+  function update<K extends keyof Settings>(key: K, value: Settings[K]) { dirtyRef.current = true; setDirty(true); setSettings((current) => ({ ...current, [key]: value })); }
+  function toggleDay(value: number) { dirtyRef.current = true; setDirty(true); setSettings((current) => ({ ...current, workingDays: current.workingDays.includes(value) ? current.workingDays.filter((day) => day !== value) : [...current.workingDays, value].sort((a,b) => a-b) })); }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setError(""); setNotice("");
@@ -63,7 +65,7 @@ export function OrganizationSettingsWorkspace() {
       }) });
       setNotice("Organization settings saved.");
       await refreshSession();
-      setDirty(false);
+      dirtyRef.current = false; setDirty(false);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to save organization settings."); }
     finally { setSaving(false); }
   }
