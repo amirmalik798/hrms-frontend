@@ -66,8 +66,8 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
         if (!authoritativeDate || !/^\d{4}-\d{2}-\d{2}$/.test(authoritativeDate)) {
           throw new Error("The organization work date could not be verified. Attendance has not been loaded using your device date.");
         }
-        const start = shiftDate(authoritativeDate, -14);
-        const end = shiftDate(authoritativeDate, 14);
+        const start = authoritativeDate;
+        const end = authoritativeDate;
         if (!active) return;
         setTimeZone(initial.timeZone || "Africa/Kigali");
         setFromDate(start); setToDate(end);
@@ -150,11 +150,20 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
     setAppliedToDate(toDate);
   }
 
-  function resetDateRange() {
-    const base = appliedToDate || getLocalISODate();
-    const start = shiftDate(base, -28);
-    setFromDate(start); setToDate(base);
-    setAppliedFromDate(start); setAppliedToDate(base);
+  function applyAttendancePreset(days?: number, months?: number) {
+    const end = appliedToDate || getLocalISODate();
+    let start = end;
+    if (months) {
+      const date = new Date(`${end}T12:00:00Z`);
+      date.setUTCMonth(date.getUTCMonth() - months);
+      start = shiftDate(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`, 1);
+    } else if (days) {
+      start = shiftDate(end, -(days - 1));
+    }
+    setFromDate(start);
+    setToDate(end);
+    setAppliedFromDate(start);
+    setAppliedToDate(end);
     setError("");
   }
 
@@ -171,7 +180,25 @@ export function AttendanceWorkspace({ pageKey }: { pageKey: string }) {
           <label className="field" style={{ minWidth: 160 }}><span className="field-label">From date</span><input className="text-input" type="date" value={fromDate} max={toDate || undefined} onChange={(event) => setFromDate(event.target.value)} /></label>
           <label className="field" style={{ minWidth: 160 }}><span className="field-label">To date</span><input className="text-input" type="date" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} /></label>
           <Button variant="primary" leading={<CalendarDays size={14} />} busy={loading} disabled={!rangeReady || !fromDate || !toDate || fromDate > toDate} onClick={applyDateRange}>Apply dates</Button>
-          <Button variant="ghost" disabled={loading || !rangeReady} onClick={resetDateRange}>Last 29 days</Button>
+          <div className="attendance-range-presets" role="group" aria-label="Attendance date presets">
+            {[
+              { label: "Last 7 days", days: 7 },
+              { label: "Last 14 days", days: 14 },
+              { label: "Last month", months: 1 },
+              { label: "Last 3 months", months: 3 },
+              { label: "Last 6 months", months: 6 },
+            ].map((preset) => (
+              <Button
+                key={preset.label}
+                size="sm"
+                variant="secondary"
+                disabled={loading || !rangeReady}
+                onClick={() => applyAttendancePreset(preset.days, preset.months)}
+              >
+                {preset.label}
+              </Button>
+            ))}
+          </div>
         </div>
         <span style={{ color: "var(--muted)", fontSize: 11 }}>{loading ? "Loading…" : `${entries.length} records`}</span>
       </div>

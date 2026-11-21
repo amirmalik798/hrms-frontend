@@ -651,3 +651,183 @@ body { font-size: 15px; line-height: 1.55; }
   .drawer-footer { flex-wrap: wrap; padding-bottom: calc(15px + env(safe-area-inset-bottom)); }
   .drawer-footer > .button { flex: 1 1 auto; }
 }
+
+
+/* Attendance date-range presets */
+.attendance-range-presets {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  padding-top: 2px;
+}
+.attendance-range-presets .button {
+  min-height: 36px;
+}
+@media (max-width: 760px) {
+  .attendance-range-presets {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .attendance-range-presets .button {
+    width: 100%;
+  }
+}
+
+
+/* Global readability refinement — consistent hierarchy across workspaces */
+:root {
+  font-synthesis: none;
+  text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+body {
+  font-family: Inter, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: .005em;
+}
+.page-content {
+  padding-top: 36px;
+}
+.page-header h1 {
+  font-size: clamp(27px, 2.25vw, 34px);
+  line-height: 1.18;
+  letter-spacing: -.035em;
+}
+.page-description {
+  max-width: 760px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.panel-heading p,
+.metric-foot,
+.activity-row span,
+.task-row span,
+.table-secondary,
+.field-hint,
+.form-note,
+.notice,
+.info-callout,
+.success-callout {
+  line-height: 1.6;
+}
+.data-table {
+  font-size: 13px;
+}
+.data-table thead th {
+  font-size: 11px;
+  letter-spacing: .055em;
+}
+.data-table tbody td {
+  font-size: 13px;
+}
+.table-secondary {
+  font-size: 11px;
+}
+.field-label {
+  font-size: 12px;
+  line-height: 1.4;
+}
+.field-hint,
+.field-error {
+  font-size: 11px;
+}
+.text-input {
+  min-height: 43px;
+  font-size: 14px;
+}
+.button {
+  font-size: 13px;
+  letter-spacing: .005em;
+}
+.status-badge {
+  font-size: 11px;
+  line-height: 1.35;
+}
+.panel-heading {
+  padding-block: 19px;
+}
+.drawer-header h2 {
+  font-size: 19px;
+}
+.drawer-header p {
+  font-size: 13px;
+  line-height: 1.65;
+}
+.drawer-body {
+  line-height: 1.6;
+}
+.payslip-generator-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  margin-bottom: 18px;
+}
+.payslip-generator-heading .metric-icon {
+  flex: 0 0 auto;
+}
+.payslip-generator-heading h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 17px;
+  line-height: 1.35;
+  font-weight: 730;
+  letter-spacing: -.02em;
+}
+.payslip-generator-heading p {
+  margin: 5px 0 0;
+  max-width: 680px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.payslip-generator-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(170px, 220px)) auto;
+  align-items: end;
+  gap: 12px;
+}
+.payslip-generator-controls .button {
+  min-height: 43px;
+}
+.payslip-generator-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+}
+.payslip-generator-footer p {
+  max-width: 650px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.payslip-month-count {
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 760px) {
+  .page-content {
+    padding-top: 24px;
+  }
+  .payslip-generator-controls {
+    grid-template-columns: 1fr;
+  }
+  .payslip-generator-controls .button {
+    width: 100%;
+  }
+  .payslip-generator-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
