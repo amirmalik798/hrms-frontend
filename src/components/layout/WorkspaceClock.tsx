@@ -127,6 +127,7 @@ export function WorkspaceClock({ timeZone, timeZoneStatus, showAttendanceStatus 
       setStatus(confirmed);
       setActionNotice(action === "CLOCK_IN" ? "Your clock-in was recorded." : "Your clock-out was recorded.");
       notifyAttendanceStatusChanged();
+      setOpen(false);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "The attendance action was not accepted.";
       // A lost response must not create duplicate punches: confirm the actual server state first.
@@ -136,6 +137,7 @@ export function WorkspaceClock({ timeZone, timeZoneStatus, showAttendanceStatus 
         if (confirmed === expected) {
           setActionNotice(action === "CLOCK_IN" ? "Your clock-in was recorded." : "Your clock-out was recorded.");
           notifyAttendanceStatusChanged();
+          setOpen(false);
           return;
         }
       } catch { setStatus("unavailable"); }
