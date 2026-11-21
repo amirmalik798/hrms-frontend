@@ -37,9 +37,14 @@ export function DepartmentsWorkspace() {
   const [notice, setNotice] = useState("");
   const [statusTarget, setStatusTarget] = useState<Department | null>(null);
   const [statusSaving, setStatusSaving] = useState(false);
-  const canCreate = user.permissions.includes("department.create");
-  const canEdit = user.permissions.includes("department.update");
-  const canDeactivate = user.permissions.includes("department.deactivate");
+  // Organization Admin is implicitly authorized by the backend's
+  // hasTenantPermission() helper. Its session endpoint intentionally omits
+  // a permissions array, so mirror that role-level access in the UI rather
+  // than hiding department lifecycle controls for an empty array.
+  const isOrganizationAdmin = user.role === "ORGANIZATION_ADMIN";
+  const canCreate = isOrganizationAdmin || user.permissions.includes("department.create");
+  const canEdit = isOrganizationAdmin || user.permissions.includes("department.update");
+  const canDeactivate = isOrganizationAdmin || user.permissions.includes("department.deactivate");
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
