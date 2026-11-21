@@ -68,9 +68,9 @@ export function MessagesWorkspace() {
 
   useEffect(() => { void loadInbox(); }, [loadInbox]);
   useEffect(() => { if (selectedId) void loadThread(selectedId); else setMessages([]); }, [selectedId, loadThread]);
-  useSmartRefresh(() => {
-    void loadInbox(true);
-    if (selectedId) void loadThread(selectedId, true);
+  useSmartRefresh(async () => {
+    await loadInbox(true);
+    if (selectedId) await loadThread(selectedId, true);
   }, !compose && !sending);
 
   async function sendNew(event: FormEvent<HTMLFormElement>) {
