@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertCircle, CheckCircle2, Clock3, LoaderCircle, LogIn, LogOut, X } from "lucide-react";
 import { apiRequest } from "@/lib/api-client";
+import { ATTENDANCE_STATUS_CHANGED_EVENT, notifyAttendanceStatusChanged } from "@/lib/attendance-events";
 
 type AttendanceStatus = "CLOCKED_IN" | "CLOCKED_OUT" | "loading" | "unavailable";
 type ConfirmedStatus = Extract<AttendanceStatus, "CLOCKED_IN" | "CLOCKED_OUT">;
@@ -74,13 +75,13 @@ export function WorkspaceClock({ timeZone, timeZoneStatus, showAttendanceStatus 
     void refresh();
     const timer = window.setInterval(onVisible, 10_000);
     window.addEventListener("focus", onVisible);
-    window.addEventListener("hrms:attendance-status-changed", onVisible);
+    window.addEventListener(ATTENDANCE_STATUS_CHANGED_EVENT, onVisible);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       active = false;
       window.clearInterval(timer);
       window.removeEventListener("focus", onVisible);
-      window.removeEventListener("hrms:attendance-status-changed", onVisible);
+      window.removeEventListener(ATTENDANCE_STATUS_CHANGED_EVENT, onVisible);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [showAttendanceStatus]);
@@ -126,7 +127,7 @@ export function WorkspaceClock({ timeZone, timeZoneStatus, showAttendanceStatus 
       if (confirmed !== expected) throw new Error("The attendance event was submitted, but the new clock status could not be confirmed. Refresh the status before trying again.");
       setStatus(confirmed);
       setActionNotice(action === "CLOCK_IN" ? "Your clock-in was recorded." : "Your clock-out was recorded.");
-      window.dispatchEvent(new Event("hrms:attendance-status-changed"));
+      notifyAttendanceStatusChanged();
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "The attendance action was not accepted.";
       // A lost response must not create duplicate punches: confirm the actual server state first.
@@ -135,7 +136,7 @@ export function WorkspaceClock({ timeZone, timeZoneStatus, showAttendanceStatus 
         setStatus(confirmed);
         if (confirmed === expected) {
           setActionNotice(action === "CLOCK_IN" ? "Your clock-in was recorded." : "Your clock-out was recorded.");
-          window.dispatchEvent(new Event("hrms:attendance-status-changed"));
+          notifyAttendanceStatusChanged();
           return;
         }
       } catch { setStatus("unavailable"); }
