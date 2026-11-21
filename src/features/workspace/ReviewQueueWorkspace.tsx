@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { AlertCircle, CheckCircle2, Clock3, FileClock, ShieldAlert, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
@@ -24,6 +24,8 @@ interface QueueItem extends Record<string, unknown> {
 
 type QueueType = "corrections" | "overtime" | "excess";
 type DecisionKind = "approve" | "reject" | "reviewed" | "follow-up";
+const availableQueueTypes: QueueType[] = ["corrections", "overtime", "excess"];
+
 const endpoint: Record<QueueType, { path: string; keys: string[]; label: string }> = {
   corrections: { path: "/attendance/corrections", keys: ["requests", "corrections"], label: "Corrections" },
   overtime: { path: "/attendance/overtime", keys: ["requests", "overtimeRequests"], label: "Overtime" },
@@ -58,7 +60,7 @@ export function ReviewQueueWorkspace() {
   const authoritativeDate = workDate || getLocalISODate();
   const excessFromDate = dateOffset(authoritativeDate, -30);
   const excessToDate = dateOffset(authoritativeDate, 30);
-  const available: QueueType[] = ["corrections", "overtime", "excess"];
+  const available = availableQueueTypes;
   const [active, setActive] = useState<QueueType>("corrections");
   const [items, setItems] = useState<Record<QueueType, QueueItem[]>>({ corrections: [], overtime: [], excess: [] });
   const [loading, setLoading] = useState(true);
