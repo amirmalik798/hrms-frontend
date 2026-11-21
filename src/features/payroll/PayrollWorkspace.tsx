@@ -13,6 +13,7 @@ import { ProfilePhoto } from "@/components/ui/ProfilePhoto";
 import { apiRequest } from "@/lib/api-client";
 import { formatDate, formatMoney, humanize } from "@/lib/format";
 import { buildSalarySlipDocument, type SalarySlipPayload } from "@/features/payroll/salary-slip-document";
+import { useAttendanceRefresh } from "@/lib/attendance-events";
 
 interface Payment {
   id?: string; employeeId: string; employeeCode?: string; firstName?: string; lastName?: string;
@@ -88,6 +89,7 @@ export function PayrollWorkspace() {
   }, [month]);
   useEffect(() => { if (workDate && !monthTouchedByUser) setMonth(workDate.slice(0, 7)); }, [workDate, monthTouchedByUser]);
   useEffect(() => { void load(); }, [load]);
+  useAttendanceRefresh(() => { void load(); });
 
   const visible = payments.filter((item) => {
     const needle = search.trim().toLowerCase();
