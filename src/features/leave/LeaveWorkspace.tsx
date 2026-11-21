@@ -19,7 +19,7 @@ interface Holiday { id: string; holidayDate: string; name: string; isPaid: boole
 type Tab = "requests" | "holidays";
 
 export function LeaveWorkspace() {
-  const { user, workDate } = useWorkspace();
+  const { user } = useWorkspace();
   const [tab, setTab] = useState<Tab>("requests");
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
